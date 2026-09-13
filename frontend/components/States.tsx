@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { AlertTriangle, RotateCcw, Inbox } from "lucide-react";
+import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Panel } from "@/components/Panel";
 
 /**
@@ -63,14 +63,10 @@ export function EmptyState({
   icon?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center rounded-lg border border-dashed border-line bg-surface/40 px-6 py-12 text-center">
-      <span className="text-faint">
-        {icon ?? <Inbox className="size-6" strokeWidth={1.5} />}
-      </span>
-      <h3 className="mt-4 font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
-        {title}
-      </h3>
-      <p className="mt-2 max-w-md text-xs leading-relaxed text-faint">
+    <div className="flex flex-col items-center rounded-lg border border-dashed border-line-strong px-6 py-10 text-center">
+      {icon ? <span className="mb-3 text-faint">{icon}</span> : null}
+      <h3 className="text-sm font-medium text-ink">{title}</h3>
+      <p className="mt-1.5 max-w-md text-sm leading-relaxed text-muted">
         {description}
       </p>
     </div>

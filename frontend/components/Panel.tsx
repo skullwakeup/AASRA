@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** Flat, hairline-bordered surface. No heavy shadows, minimal rounding. */
+/** Flat, hairline-bordered surface. No shadows, no blur, minimal rounding. */
 export function Panel({
   children,
   className = "",
@@ -9,28 +9,9 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section
-      className={`rounded-lg border border-line bg-surface/80 backdrop-blur-[2px] ${className}`}
-    >
+    <section className={`rounded-lg border border-line bg-surface ${className}`}>
       {children}
     </section>
-  );
-}
-
-/** Small uppercase technical label used throughout the interface. */
-export function Eyebrow({
-  children,
-  className = "",
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <span
-      className={`font-mono text-[10px] uppercase tracking-[0.18em] text-faint ${className}`}
-    >
-      {children}
-    </span>
   );
 }
 
@@ -38,52 +19,40 @@ export function Eyebrow({
 export function PanelHeader({
   title,
   meta,
-  icon,
 }: {
   title: string;
   meta?: ReactNode;
-  icon?: ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-line px-4 py-3 sm:px-5">
-      <div className="flex min-w-0 items-center gap-2.5">
-        {icon ? <span className="text-faint">{icon}</span> : null}
-        <h2 className="truncate font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
-          {title}
-        </h2>
-      </div>
+      <h2 className="truncate text-sm font-medium text-ink">{title}</h2>
       {meta ? <div className="shrink-0">{meta}</div> : null}
     </div>
   );
 }
 
-/** Full-width section heading used between dashboard blocks. */
+/** Heading that opens each block of the results page. */
 export function SectionHeading({
   title,
   count,
   description,
-  icon,
 }: {
   title: string;
   count?: string;
   description?: string;
-  icon?: ReactNode;
 }) {
   return (
-    <div className="mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-      <div className="flex items-center gap-3">
-        {icon ? <span className="text-water/70">{icon}</span> : null}
-        <h2 className="font-mono text-[13px] uppercase tracking-[0.2em] text-ink">
-          {title}
-        </h2>
+    <div className="mb-4">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 className="text-base font-semibold text-ink">{title}</h2>
         {count ? (
-          <span className="rounded border border-line bg-raised px-1.5 py-0.5 font-mono text-[10px] text-muted">
-            {count}
-          </span>
+          <span className="text-sm text-faint tabular-nums">{count}</span>
         ) : null}
       </div>
       {description ? (
-        <p className="max-w-xl text-xs text-faint">{description}</p>
+        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted">
+          {description}
+        </p>
       ) : null}
     </div>
   );

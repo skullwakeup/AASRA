@@ -33,10 +33,28 @@ app = FastAPI(
     version=config.APP_VERSION,
 )
 
-# The frontend is not built yet; permissive CORS keeps local development simple.
+# ---------------------------------------------------------------------------
+# CORS
+# ---------------------------------------------------------------------------
+# Local development origins always work, with no configuration needed. The
+# deployed frontend's origin (e.g. a Vercel URL) is added via the
+# CORS_ORIGINS environment variable — a comma-separated list, e.g.
+#   CORS_ORIGINS=https://aasra.vercel.app,https://aasra-git-main-you.vercel.app
+# The API has no auth/cookies (allow_credentials=False), so a wildcard origin
+# would not expose user data — but a fixed, explicit list is not meaningfully
+# harder to operate and avoids letting arbitrary third-party sites relay
+# traffic through a visitor's browser to this API for free.
+_DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+_configured_origins = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+ALLOWED_ORIGINS = _DEV_ORIGINS + _configured_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

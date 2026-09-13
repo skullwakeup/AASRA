@@ -1,0 +1,40 @@
+# Render Blueprint for the AASRA backend.
+#
+# This defines the backend service only. The frontend is deployed separately
+# on Vercel (Next.js) and is not part of this Blueprint.
+#
+# Usage: in the Render dashboard, "New +" -> "Blueprint", point it at this
+# repository. Render will read this file and propose the service below.
+# You will be prompted to fill in CORS_ORIGINS (see the comment on that
+# variable) since its value is intentionally not stored here.
+#
+# See docs/deployment.md for the full production-readiness notes this file
+# is based on.
+
+services:
+  - type: web
+    name: aasra-backend
+    runtime: python
+    rootDir: backend
+    # ultralytics is installed separately, with --no-deps — see the comment
+    # at the bottom of backend/requirements.txt for why.
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      pip install --no-deps ultralytics==8.3.253
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      # backend/.python-version (checked into the repo) already pins this to
+      # 3.13; this entry is a second, explicit guarantee in case Render's
+      # monorepo root-directory handling does not pick up that file.
+      - key: PYTHON_VERSION
+        value: "3.13"
+      # Comma-separated list of allowed frontend origins, e.g.
+      #   https://aasra.vercel.app,https://aasra-git-main-you.vercel.app
+      # Left unset here (sync: false) rather than hardcoded, since the
+      # Vercel URL isn't known until the frontend is first deployed. Set
+      # the real value in the Render dashboard once it is. Local development
+      # (http://localhost:3000) is always allowed by the app itself and does
+      # not need this variable.
+      - key: CORS_ORIGINS
+        sync: false

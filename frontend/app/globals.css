@@ -2,9 +2,8 @@
 
 /* ==========================================================================
    AASRA — design tokens
-   A restrained command-centre palette: deep neutral ground, one blue for
-   water, and three semantic bands (green / amber / orange) that only ever
-   appear when they carry meaning.
+   A calm, neutral dark palette: one blue for water, and three semantic
+   bands (green / amber / orange) used only for zone potential levels.
    ========================================================================== */
 
 :root {
@@ -12,7 +11,7 @@
 
   --ground: #070a0e; /* page */
   --surface: #0c1117; /* panels */
-  --surface-raised: #111823; /* cards on panels */
+  --surface-raised: #111823; /* controls on panels */
   --line: #1b2532; /* hairline borders */
   --line-strong: #273343;
 
@@ -49,48 +48,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Technical ground: a faint engineering grid plus a single cool glow.
-   Fixed, non-animated, and deliberately low-contrast. */
-.aasra-grid::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  background-image:
-    linear-gradient(to right, rgba(148, 176, 208, 0.045) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(148, 176, 208, 0.045) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 35%, transparent 100%);
-}
-
-.aasra-grid::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background: radial-gradient(
-    ellipse 70% 45% at 50% -10%,
-    rgba(46, 168, 240, 0.09),
-    transparent 70%
-  );
-  pointer-events: none;
-}
-
-/* Checkerboard behind visualisation images so letterboxing reads as
-   "transparent canvas" rather than a rendering bug. */
+/* Plain, neutral backdrop behind visualisation images so letterboxing reads
+   as intentional empty canvas. */
 .viewer-canvas {
-  background-color: #080b10;
-  background-image:
-    linear-gradient(45deg, rgba(255, 255, 255, 0.016) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(255, 255, 255, 0.016) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.016) 75%),
-    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.016) 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  background-color: #05080c;
 }
 
 /* ---------------------------------------------------------------- motion --
-   Subtle only: fades, a slow status pulse, one sweep during analysis.
+   Subtle only: short fades, plus one sweep while an analysis is running.
    Everything here is disabled under prefers-reduced-motion.            */
 
 @keyframes aasra-fade-up {
@@ -110,16 +75,6 @@ body {
   }
   to {
     opacity: 1;
-  }
-}
-
-@keyframes aasra-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
   }
 }
 
@@ -149,10 +104,6 @@ body {
   animation: aasra-fade 0.35s ease both;
 }
 
-.anim-pulse-slow {
-  animation: aasra-pulse 2.4s ease-in-out infinite;
-}
-
 .anim-sweep {
   animation: aasra-sweep 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
@@ -164,7 +115,6 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .anim-fade-up,
   .anim-fade,
-  .anim-pulse-slow,
   .anim-sweep,
   .anim-indeterminate {
     animation: none !important;

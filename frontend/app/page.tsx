@@ -155,7 +155,7 @@ export default function Home() {
 
   return (
     <>
-      <Header healthState={healthState} health={health} />
+      <Header />
 
       <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
         {stage === "results" && result ? (
@@ -223,20 +223,17 @@ export default function Home() {
 function Intro() {
   return (
     <div className="anim-fade-up text-center">
-      <div className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5">
-        <span className="size-1 rounded-full bg-water" />
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
-          Computer-vision decision support
-        </span>
-      </div>
+      <p className="text-xs font-medium uppercase tracking-[0.08em] text-faint">
+        Computer-vision decision support
+      </p>
 
-      <h1 className="mt-6 font-mono text-2xl uppercase leading-tight tracking-[0.12em] text-ink sm:text-[32px] sm:tracking-[0.16em]">
+      <h1 className="mt-3 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
         Flood Imagery Analysis
       </h1>
 
-      <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-muted">
-        Upload an aerial flood image to analyze flood coverage, identify
-        potentially isolated land regions, and rank potential supply-drop zones.
+      <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted">
+        Upload an aerial flood image to estimate water coverage and rank
+        potential relief zones, each with a candidate drop point.
       </p>
     </div>
   );

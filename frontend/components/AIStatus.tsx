@@ -1,93 +1,106 @@
-import { Cpu, BrainCircuit } from "lucide-react";
-import { Panel, PanelHeader } from "@/components/Panel";
-import type { AnalysisMode } from "@/types/api";
+import { Panel } from "@/components/Panel";
+import type { AIContext, AnalysisMode } from "@/types/api";
+
+/** Report order matches the backend's `counts` object (ai_detection.py). */
+const COUNT_LABELS: {
+  key: keyof NonNullable<AIContext["counts"]>;
+  singular: string;
+  plural: string;
+}[] = [
+  { key: "person", singular: "Person", plural: "Persons" },
+  { key: "car", singular: "Car", plural: "Cars" },
+  { key: "truck", singular: "Truck", plural: "Trucks" },
+  { key: "bus", singular: "Bus", plural: "Buses" },
+  { key: "boat", singular: "Boat", plural: "Boats" },
+  { key: "motorcycle", singular: "Motorcycle", plural: "Motorcycles" },
+  { key: "bicycle", singular: "Bicycle", plural: "Bicycles" },
+];
 
 /**
- * Honest reporting of `analysis_mode` from the backend response.
+ * Supplementary YOLO object-detection summary, read from `analysis_mode.ai`
+ * and the `ai` section of the backend response.
  *
- * The backend currently ships `{ opencv: true, ai: false }`. When `ai` is
- * false this panel says NOT ENABLED — it never implies a model is running.
- * If the backend later flips the flag, this panel reflects that with no
- * frontend change.
+ * `mode.ai` is true only when the model actually loaded AND inference
+ * actually succeeded for this request — never a hardcoded value. AI success
+ * and "found something" are different things: `detections` can be empty
+ * while the status is still active, and this panel never conflates them.
+ *
+ * Styled deliberately quieter than the OpenCV results above it.
  */
-export function AIStatus({ mode }: { mode: AnalysisMode }) {
+export function AIStatus({ mode, ai }: { mode: AnalysisMode; ai?: AIContext }) {
+  const active = mode.ai;
+  const detected = active
+    ? COUNT_LABELS.filter(({ key }) => (ai?.counts?.[key] ?? 0) > 0)
+    : [];
+
   return (
-    <Panel>
-      <PanelHeader title="Analysis Mode" icon={<Cpu className="size-3.5" />} />
-      <div className="divide-y divide-line">
-        <ModeRow
-          icon={<BrainCircuit className="size-4" strokeWidth={1.75} />}
-          label="AI Context Analysis"
-          active={mode.ai}
-          activeText="Active"
-          inactiveText="Not enabled"
-          description={
-            mode.ai
-              ? "AI context analysis is reported active by the analysis service."
-              : "No AI model is running. Every result below comes from the OpenCV pipeline. The interface is ready for AI output when the service enables it."
-          }
-        />
-        <ModeRow
-          icon={<Cpu className="size-4" strokeWidth={1.75} />}
-          label="OpenCV Spatial Analysis"
-          active={mode.opencv}
-          activeText="Active"
-          inactiveText="Inactive"
-          description={
-            mode.opencv
-              ? "Water detection, connected-component regions, distance transform and zone scoring."
-              : "The OpenCV pipeline is reported inactive by the analysis service."
-          }
-        />
+    <Panel className="p-4 sm:p-5">
+      <div className="grid gap-5 md:grid-cols-[180px_minmax(0,1fr)] md:gap-8">
+        <dl className="flex gap-8 text-sm md:flex-col md:gap-3">
+          <div>
+            <dt className="text-xs text-faint">Status</dt>
+            <dd className="mt-1 flex items-center gap-2 text-ink">
+              <span
+                aria-hidden="true"
+                className={`size-1.5 rounded-full ${
+                  active ? "bg-ink" : "border border-faint"
+                }`}
+              />
+              {active ? "Active" : "Unavailable"}
+            </dd>
+          </div>
+          {active && ai?.model ? (
+            <div>
+              <dt className="text-xs text-faint">Model</dt>
+              <dd className="mt-1 font-mono text-ink">{ai.model}</dd>
+            </div>
+          ) : null}
+        </dl>
+
+        <div className="min-w-0">
+          {active ? (
+            <>
+              <p className="text-xs text-faint">Detected in this image</p>
+              {detected.length > 0 ? (
+                <ul className="mt-2 flex flex-wrap gap-x-8 gap-y-3">
+                  {detected.map(({ key, singular, plural }) => {
+                    const count = ai?.counts?.[key] ?? 0;
+                    return (
+                      <li key={key}>
+                        <span className="block font-mono text-xl leading-none text-ink tabular-nums">
+                          {count}
+                        </span>
+                        <span className="mt-1 block text-xs text-muted">
+                          {count === 1 ? singular : plural}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-muted">
+                  No relevant objects detected.
+                </p>
+              )}
+              <p className="mt-4 max-w-2xl text-xs leading-relaxed text-faint">
+                Visible-object context only. A detected person or vehicle is not
+                evidence of a flood victim, a stranded person or a rescue asset,
+                and detections are never used in water analysis or zone ranking.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-muted">
+                {ai?.message ?? "AI object detection is unavailable."}
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-faint">
+                The OpenCV analysis completed normally. Every result above comes
+                from it.
+              </p>
+            </>
+          )}
+        </div>
       </div>
     </Panel>
-  );
-}
-
-function ModeRow({
-  icon,
-  label,
-  active,
-  activeText,
-  inactiveText,
-  description,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active: boolean;
-  activeText: string;
-  inactiveText: string;
-  description: string;
-}) {
-  return (
-    <div className="px-4 py-4 sm:px-5">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className={active ? "text-emerald-300" : "text-faint"}>
-            {icon}
-          </span>
-          <span className="truncate text-[13px] font-medium text-ink">
-            {label}
-          </span>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {active ? (
-            <span className="size-1.5 rounded-full bg-emerald-400" />
-          ) : (
-            <span className="size-1.5 rounded-full border border-faint" />
-          )}
-          <span
-            className={`font-mono text-[10px] uppercase tracking-[0.16em] ${
-              active ? "text-emerald-300" : "text-faint"
-            }`}
-          >
-            {active ? activeText : inactiveText}
-          </span>
-        </div>
-      </div>
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
-        {description}
-      </p>
-    </div>
   );
 }

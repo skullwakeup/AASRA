@@ -32,7 +32,7 @@ number in a real response is computed from the uploaded image):
 ```json
 {
   "success": true,
-  "analysis_mode": { "opencv": true, "ai": false },
+  "analysis_mode": { "opencv": true, "ai": true },
 
   "image_info": {
     "original_width": 1920, "original_height": 1080,
@@ -90,6 +90,20 @@ number in a real response is computed from the uploaded image):
     }
   ],
 
+  "ai": {
+    "status": "active",
+    "model": "YOLO11n",
+    "message": "Supplementary object detection. Detected objects are visible-object context only ...",
+    "detections": [
+      {
+        "label": "person",
+        "confidence": 0.91,
+        "bbox": { "x1": 120, "y1": 80, "x2": 220, "y2": 350 }
+      }
+    ],
+    "counts": { "person": 1, "car": 0, "truck": 0, "bus": 0, "boat": 0, "motorcycle": 0, "bicycle": 0 }
+  },
+
   "warnings": [],
 
   "images": {
@@ -97,7 +111,8 @@ number in a real response is computed from the uploaded image):
     "water_mask": "<base64 png>",
     "candidate_mask": "<base64 png>",
     "isolated_regions": "<base64 png>",
-    "final_analysis": "<base64 png>"
+    "final_analysis": "<base64 png>",
+    "ai_context": "<base64 png>"
   },
 
   "notice": "Decision-support prototype. ..."
@@ -105,6 +120,27 @@ number in a real response is computed from the uploaded image):
 ```
 
 Rendering an image in a browser: `data:image/png;base64,<value>`.
+
+### `analysis_mode` and `ai`
+
+`analysis_mode.opencv` is always `true` — the OpenCV pipeline (water
+detection through zone ranking) always runs and is never skipped.
+`analysis_mode.ai` is `true` only for requests where the YOLO11n model
+actually loaded **and** inference actually succeeded; it is independent of
+and never influences the OpenCV result.
+
+When AI succeeds, `ai.status` is `"active"` and `ai.detections` /
+`ai.counts` are populated (an empty `detections` array with `status:
+"active"` is normal — it means AI ran and found nothing, which is different
+from AI being unavailable). When it fails, `ai.status` is `"unavailable"`
+and only `ai.message` (a safe, generic string) is included — `images.ai_context`
+is then an empty string.
+
+`isolated_regions` is always computed and returned by the API regardless of
+`analysis_mode.ai` — it comes from the OpenCV pipeline, not from YOLO. The
+current frontend dashboard does not display this section, but the data and
+its `images.isolated_regions` view remain available to any client that wants
+them.
 
 ### Units
 

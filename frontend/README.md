@@ -44,9 +44,10 @@ No API keys. No secrets.
 
 Both calls live in [`lib/api.ts`](lib/api.ts) — nothing else in the app fetches.
 
-- `GET /health` — polled on load and every 20s. Drives the header status pill
-  (`SYSTEM READY` / `SYSTEM OFFLINE`) and supplies the real upload size limit.
-  The pill never claims the service is up when the probe fails.
+- `GET /health` — polled on load and every 20s. Drives the offline notice and
+  disables uploads on the start screen when the backend is unreachable, and
+  supplies the real upload size limit. It never claims the service is up
+  when the probe fails.
 - `POST /api/analyze` — `multipart/form-data`, form field **`image`** (fixed by
   the backend signature `analyze(image: UploadFile = File(...))`).
 
@@ -75,19 +76,18 @@ frontend/
   app/
     layout.tsx            fonts, metadata, page shell
     page.tsx              stage machine: idle -> ready -> analyzing -> results | error
-    globals.css           design tokens, grid background, motion
+    globals.css           design tokens, motion
   components/
-    Header.tsx            wordmark + live /health status pill
+    Header.tsx            wordmark
     UploadZone.tsx        drag-and-drop + browse, client-side pre-validation
     ImagePreview.tsx      staged file, "READY FOR ANALYSIS", analyze / remove
     AnalysisProgress.tsx  loading experience for the single analyze request
     ResultsDashboard.tsx  composes the results view
     MetricCard.tsx        headline metric tile
-    ImageWorkspace.tsx    tabbed viewer over the five backend visualisations
-    ZoneCard.tsx          ranked candidate zone + expandable score breakdown
-    IsolationCard.tsx     potentially isolated land region + its sub-features
-    ScoreBreakdown.tsx    score bar / factor row primitives
-    AIStatus.tsx          honest analysis_mode reporting
+    ImageWorkspace.tsx    tabbed viewer over the backend visualisations
+    ZoneCard.tsx          ranked potential zone + expandable score breakdown
+    ScoreBreakdown.tsx    score bar primitive
+    AIStatus.tsx          supplementary YOLO object-detection summary
     ScanParameters.tsx    the parameters the backend actually used
     PipelineStrip.tsx     compact description of the pipeline (upload screen)
     Disclaimer.tsx        prototype disclaimer
@@ -104,12 +104,21 @@ frontend/
 ## Wording rules
 
 The UI follows the project's terminology: *Potential Zone*, *Candidate Zone*,
-*Potentially Isolated Land Region*, *HIGH / MODERATE / LOW POTENTIAL*.
-Never "safe", never "landing zone", never any claim about people. Classification
-strings are rendered verbatim from the backend. All distances and areas are
-pixels of the processed image — never metres.
+*HIGH / MODERATE / LOW POTENTIAL*. Never "safe", never "landing zone", never
+any claim that a detected person or vehicle is a flood victim, a stranded
+person, or a rescue asset. Classification strings are rendered verbatim from
+the backend. All distances and areas are pixels of the processed image —
+never metres.
 
-`analysis_mode.ai` is reported honestly: while the backend ships `ai: false`
-the AI panel reads **NOT ENABLED** and states that results come from the OpenCV
-pipeline. If the backend later sets the flag, the panel updates with no
-frontend change.
+The backend also computes *potentially isolated land regions* and returns
+them in the API (`isolated_regions`, `images.isolated_regions`), but this
+dashboard does not currently display that section — its focus is the ranked
+relief zones. The data remains available to any client that wants it.
+
+`analysis_mode.ai` is reported honestly from the backend's real, per-request
+result: `AIStatus.tsx` shows **Active** with the model name and per-class
+detection counts only when the backend actually ran YOLO successfully for
+that image, and **Unavailable** with the backend's own message otherwise. An
+"Active" status with zero detections ("No relevant objects detected.") is
+shown distinctly from "Unavailable" — the two are never conflated. Nothing
+in this panel is hardcoded.

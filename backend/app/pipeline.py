@@ -28,6 +28,7 @@ import numpy as np
 
 from . import config
 from .services import (
+    ai_detection,
     drop_zone_detection,
     isolated_regions,
     preprocessing,
@@ -70,7 +71,8 @@ def run_analysis(image_bytes: bytes, include_images: bool = True) -> Dict[str, A
     zones = scoring.rank_zones(regions, image_area=image_area)
 
     # -- Phase 12: visualisations ------------------------------------------
-    if include_images and config.INCLUDE_IMAGES:
+    want_images = include_images and config.INCLUDE_IMAGES
+    if want_images:
         images = visualization.build_visualizations(
             display_bgr=prepared.display_bgr,
             water_mask=water.mask,
@@ -90,6 +92,16 @@ def run_analysis(image_bytes: bytes, include_images: bool = True) -> Dict[str, A
             )
         }
 
+    # -- Optional AI supplement: supplementary object detection context -----
+    # Independent of, and never fused into, the OpenCV pipeline above. This
+    # never raises — on any failure (missing dependencies, no internet for
+    # the first weight download, model/inference error) it degrades to
+    # analysis_mode.ai = False and the OpenCV results are unaffected.
+    ai_result = ai_detection.get_object_context(
+        prepared.display_bgr, build_visualization=want_images
+    )
+    images["ai_context"] = ai_detection.encode_visualization(ai_result)
+
     non_water_percentage = round(100.0 - water.water_percentage, 2)
 
     warnings = []
@@ -108,7 +120,8 @@ def run_analysis(image_bytes: bytes, include_images: bool = True) -> Dict[str, A
 
     return {
         "success": True,
-        "analysis_mode": dict(config.ANALYSIS_MODE),
+        "analysis_mode": {"opencv": True, "ai": ai_result.success},
+        "ai": ai_detection.to_response_dict(ai_result),
         "image_info": {
             "original_width": prepared.original_size[0],
             "original_height": prepared.original_size[1],

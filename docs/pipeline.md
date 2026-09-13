@@ -59,11 +59,13 @@ only if it is *both* weakly supported (mean support < 0.22) *and* smaller than
 `REGION_LARGE_AREA_FRACTION` of the frame, so small genuine flood pockets
 survive. Output: uint8 mask, 255 = water.
 
-**Known failure modes:** a wide, smooth, uniformly coloured dirt road or bare
-earth field can still read as muddy water — from a single RGB frame the two are
-genuinely close, and the usual remedy (NDWI) needs a near-infrared band this
-pipeline does not have. Dark roofs and deep shadow can read as water; sun glint
-and whitecaps can read as land.
+### Known failure modes
+
+A wide, smooth, uniformly coloured dirt road or bare earth field can still
+read as muddy water — from a single RGB frame the two are genuinely close,
+and the usual remedy (NDWI) needs a near-infrared band this pipeline does not
+have. Dark roofs and deep shadow can read as water; sun glint and whitecaps
+can read as land.
 
 ## 3. Water buffer and candidate mask (`services/drop_zone_detection.py`)
 
@@ -137,18 +139,49 @@ top `MAX_ZONES` (default 3) are returned, renumbered 1..N.
 
 ## 7. Visualisations (`services/visualization.py`)
 
-Five base64 PNGs: `original`, `water_mask`, `candidate_mask`,
+Five base64 PNGs, always returned: `original`, `water_mask`, `candidate_mask`,
 `isolated_regions`, `final_analysis`. `water_mask` fills the detected water
 over a dimmed greyscale copy of the scene, so the mask can be judged against
 what is actually in the image rather than read as a context-free binary map.
-The final overlay draws the water tint,
-all candidate boundaries, the ranked zone outlines with zone number + score,
-the candidate drop point crosshair, the isolated-region boxes, and a standing
-disclaimer. Every drawing happens on a copy.
+`final_analysis` is deliberately the clean, at-a-glance result: the water
+tint, each **ranked** zone's boundary and label, and its drop-point marker —
+unranked candidate outlines and isolated-region boxes are left out, since
+they have their own dedicated views. `isolated_regions` is still produced and
+returned by the API for completeness, but the current frontend dashboard does
+not display it (see `frontend/README.md`). Every drawing happens on a copy of
+the resized image; the upload itself is never modified.
 
-## Planned (not implemented)
+## 8. Supplementary object detection (`services/ai_detection.py`)
 
-- obstacle detection (buildings, trees, vehicles, wires)
-- segmentation model to replace/assist the water heuristic (`analysis_mode.ai`)
-- georeferencing so pixel distances can become real-world distances
-- multi-image / temporal analysis
+A sixth image, `ai_context`, is added to the response only when this stage
+succeeds. It is produced by a small, separate module that is **not part of**
+the pipeline above:
+
+- Model: Ultralytics **YOLO11n**, pretrained on COCO (80 general object
+  classes). Loaded lazily on first use and cached for the life of the
+  process; the ~5.6 MB weight file is downloaded once to
+  `backend/app/services/weights/` and reused after that.
+- Runs once per request on the same resized (`display_bgr`) image the OpenCV
+  stages use, with a fixed confidence threshold
+  (`MIN_DETECTION_CONFIDENCE = 0.25`).
+- Reports only seven classes relevant to a relief-imagery context: `person`,
+  `car`, `truck`, `bus`, `boat`, `motorcycle`, `bicycle`. Every other COCO
+  class YOLO11n can technically detect is discarded.
+- Output: a list of detections (label, confidence, pixel bounding box), a
+  per-class count, and an annotated image with clean bounding boxes and
+  `Label NN%` tags — no dimming, no tinting.
+- **Never influences** water detection, candidate regions, clearance, or zone
+  scoring/ranking in any way. It reads the processed image and writes only to
+  its own part of the response (`ai` and `images.ai_context`).
+- Fails safe: if `ultralytics` isn't installed, the weight download fails, or
+  inference raises for any reason, the function returns a failure result
+  instead of raising. The caller then reports `analysis_mode.ai = false` and
+  every other field in the response is unaffected.
+
+## Not implemented
+
+- Obstacle detection (buildings, trees, power lines) beyond what the water
+  buffer implicitly avoids.
+- Georeferencing — pixel distances never convert to real-world distances.
+- Multi-image or temporal (before/after) analysis.
+- Any accuracy evaluation against a labelled flood-imagery dataset.

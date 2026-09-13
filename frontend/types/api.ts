@@ -147,13 +147,63 @@ export interface AnalysisImages {
   candidate_mask: string;
   isolated_regions: string;
   final_analysis: string;
+  /** Present only when AI inference actually succeeded for this request. */
+  ai_context: string;
 }
 
 export type AnalysisImageKey = keyof AnalysisImages;
 
+/** Pixel box in processed-image coordinates — same space as `image_info`. */
+export interface AIBoundingBox {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+/**
+ * One YOLO detection. A label + confidence only — detecting a "person" or
+ * "car" is not evidence of a flood victim, a stranded person, or a rescue
+ * asset. It is visible-object context only.
+ */
+export interface AIDetection {
+  label: string;
+  /** 0..1 model confidence. */
+  confidence: number;
+  bbox: AIBoundingBox;
+}
+
+/** Per-class detection counts. Only classes YOLO11n actually supports appear. */
+export interface AIDetectionCounts {
+  person?: number;
+  car?: number;
+  truck?: number;
+  bus?: number;
+  boat?: number;
+  motorcycle?: number;
+  bicycle?: number;
+}
+
+/**
+ * services/ai_detection.py — optional, supplementary object-detection
+ * context (YOLO11n). `status` is "active" only when the model loaded AND
+ * inference succeeded for this request; otherwise "unavailable" with a
+ * safe, generic `message`. `detections` can legitimately be an empty array
+ * while `status` is "active" — AI success and "found something" are
+ * different things.
+ */
+export interface AIContext {
+  status: "active" | "unavailable";
+  message: string;
+  model?: string;
+  detections?: AIDetection[];
+  counts?: AIDetectionCounts;
+}
+
 export interface AnalysisResponse {
   success: true;
   analysis_mode: AnalysisMode;
+  ai: AIContext;
   image_info: ImageInfo;
   parameters: AnalysisParameters;
   metrics: AnalysisMetrics;

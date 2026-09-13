@@ -1,157 +1,120 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Crosshair, Ruler, Waves } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { ScoreBar } from "@/components/ScoreBreakdown";
 import { toneFor } from "@/lib/classification";
-import { formatInt, formatPx, formatScore, rankLabel } from "@/lib/format";
+import { formatInt, formatPx, formatScore } from "@/lib/format";
 import type { ScoreWeights, Zone } from "@/types/api";
 
 /**
- * One ranked candidate zone.
+ * One ranked potential zone.
+ *
+ * `#{zone.id}` matches the "Zone N" label drawn in the Final Result image —
+ * the backend renumbers zones 1..N in ranked order (scoring.rank_zones).
  *
  * Wording rule: the backend's own classification string is shown verbatim
  * ("HIGH POTENTIAL" etc.). Nothing here is described as safe, and no aircraft
- * or landing claim is made — the backend calls these candidate supply-drop
- * zones and so does this card.
+ * or landing claim is made.
  */
 export function ZoneCard({
   zone,
-  index,
   weights,
 }: {
   zone: Zone;
-  index: number;
   weights: ScoreWeights;
 }) {
   const [expanded, setExpanded] = useState(false);
   const tone = toneFor(zone.classification);
-  const isTop = index === 0;
   const breakdown = zone.score_breakdown;
 
   return (
-    <article
-      className={`anim-fade-up flex flex-col overflow-hidden rounded-lg border bg-surface/80 transition-colors duration-200 ${
-        isTop ? "border-emerald-400/30" : "border-line hover:border-line-strong"
-      }`}
-      style={{ animationDelay: `${index * 60}ms` }}
-    >
-      {/* Rank + classification */}
-      <header
-        className={`flex items-center justify-between gap-3 border-b border-line px-4 py-3 ${
-          isTop ? tone.wash : ""
-        }`}
-      >
-        <div className="flex items-center gap-3">
-          <span
-            className={`font-mono text-[22px] font-medium leading-none tabular-nums ${
-              isTop ? tone.text : "text-faint"
-            }`}
-          >
-            {rankLabel(index)}
+    <article className="flex flex-col rounded-lg border border-line bg-surface">
+      <div className="px-5 pb-4 pt-5">
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-mono text-sm text-muted tabular-nums">
+            #{zone.id}
           </span>
-          <div>
-            <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
-              Potential Zone
-            </div>
-            <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-faint/80">
-              ID {zone.id}
-            </div>
-          </div>
+          <span
+            className={`inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.06em] ${tone.text}`}
+          >
+            <span
+              aria-hidden="true"
+              className={`size-1.5 rounded-full ${tone.fill}`}
+            />
+            {zone.classification}
+          </span>
         </div>
 
-        <span
-          className={`rounded border px-2 py-1 font-mono text-[9px] uppercase tracking-[0.14em] ${tone.badge}`}
-        >
-          {zone.classification}
-        </span>
-      </header>
-
-      <div className="flex-1 px-4 py-4">
-        {/* Score */}
-        <div className="flex items-baseline gap-1.5">
-          <span
-            className={`font-mono text-[32px] font-medium leading-none tabular-nums ${tone.text}`}
-          >
+        <p className="mt-4 flex items-baseline gap-1.5">
+          <span className="font-mono text-4xl font-medium leading-none tracking-tight text-ink tabular-nums">
             {formatScore(zone.score)}
           </span>
-          <span className="font-mono text-sm text-faint">/ 100</span>
-        </div>
-        <div className="mt-3 h-[3px] w-full overflow-hidden rounded-full bg-line">
+          <span className="text-sm text-faint">/ 100</span>
+        </p>
+        <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-line">
           <div
-            className={`h-full rounded-full ${tone.fill} transition-[width] duration-700 ease-out`}
+            className={`h-full rounded-full ${tone.fill}`}
             style={{ width: `${Math.max(0, Math.min(100, zone.score))}%` }}
           />
         </div>
-
-        {/* Real measurements — all in processed-image pixels. */}
-        <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4">
-          <Measure
-            icon={<Ruler className="size-3" strokeWidth={1.75} />}
-            label="Pixel Area"
-            value={`${formatInt(zone.pixel_area)} px`}
-          />
-          <Measure
-            icon={<Waves className="size-3" strokeWidth={1.75} />}
-            label="Water Clearance"
-            value={formatPx(zone.water_clearance, 1)}
-          />
-          <Measure
-            icon={<Ruler className="size-3" strokeWidth={1.75} />}
-            label="Region Clearance"
-            value={formatPx(zone.region_clearance, 1)}
-          />
-          <Measure
-            icon={<Crosshair className="size-3" strokeWidth={1.75} />}
-            label="Drop Point"
-            value={`${zone.drop_point.x}, ${zone.drop_point.y}`}
-          />
-        </dl>
       </div>
 
+      {/* Real measurements — all in processed-image pixels. */}
+      <dl className="space-y-2.5 border-t border-line px-5 py-4 text-sm">
+        <Row label="Area" value={`${formatInt(zone.pixel_area)} px`} />
+        <Row label="Water clearance" value={formatPx(zone.water_clearance, 1)} />
+        <Row label="Region clearance" value={formatPx(zone.region_clearance, 1)} />
+        <Row
+          label="Drop point"
+          value={`${zone.drop_point.x}, ${zone.drop_point.y}`}
+          title="Processed-image pixel coordinates (x, y)"
+        />
+      </dl>
+
       {/* Expandable, honest score breakdown */}
-      <div className="border-t border-line">
+      <div className="mt-auto border-t border-line">
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          className="flex w-full items-center justify-between gap-2 px-4 py-3 font-mono text-[10px] uppercase tracking-[0.16em] text-faint transition-colors duration-150 hover:bg-raised/60 hover:text-muted"
+          className="flex w-full items-center justify-between gap-2 px-5 py-3 text-sm text-muted transition-colors duration-150 hover:text-ink"
         >
-          Why this score?
+          Score breakdown
           <ChevronDown
-            className={`size-3.5 transition-transform duration-200 ${
+            className={`size-4 transition-transform duration-200 ${
               expanded ? "rotate-180" : ""
             }`}
-            strokeWidth={2}
+            strokeWidth={1.75}
           />
         </button>
 
         {expanded ? (
-          <div className="anim-fade border-t border-line bg-raised/40 px-4 py-4">
-            <ul className="space-y-3.5">
+          <div className="border-t border-line px-5 py-4">
+            <ul className="space-y-3">
               <ScoreBar
-                label="Area Score"
+                label="Area"
                 value={breakdown.area_score}
                 weight={weights.area}
                 fill={tone.fill}
               />
               <ScoreBar
-                label="Water Clearance Score"
+                label="Water clearance"
                 value={breakdown.water_clearance_score}
                 weight={weights.water_clearance}
                 fill={tone.fill}
               />
               <ScoreBar
-                label="Openness Score"
+                label="Openness"
                 value={breakdown.openness_score}
                 weight={weights.openness}
                 fill={tone.fill}
               />
             </ul>
-            <p className="mt-4 text-[10px] leading-relaxed text-faint">
-              Weighted sum of the three components above, as returned by the
-              analysis service. All distances are pixels of the processed image,
-              not metres.
+            <p className="mt-4 text-xs leading-relaxed text-faint">
+              The score is the weighted sum of these components, as returned by
+              the analysis service. Distances are processed-image pixels, not
+              metres.
             </p>
           </div>
         ) : null}
@@ -160,22 +123,19 @@ export function ZoneCard({
   );
 }
 
-function Measure({
-  icon,
+function Row({
   label,
   value,
+  title,
 }: {
-  icon: React.ReactNode;
   label: string;
   value: string;
+  title?: string;
 }) {
   return (
-    <div>
-      <dt className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.14em] text-faint">
-        <span className="text-faint/70">{icon}</span>
-        {label}
-      </dt>
-      <dd className="mt-1.5 font-mono text-[13px] text-ink tabular-nums">
+    <div className="flex items-baseline justify-between gap-4">
+      <dt className="text-muted">{label}</dt>
+      <dd className="font-mono text-ink tabular-nums" title={title}>
         {value}
       </dd>
     </div>
