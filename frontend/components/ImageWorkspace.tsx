@@ -3,8 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageOff } from "lucide-react";
 import { Panel } from "@/components/Panel";
-import { toDataUrl } from "@/lib/format";
-import type { AnalysisImageKey, AnalysisImages, ImageInfo } from "@/types/api";
+import { toneFor } from "@/lib/classification";
+import { formatInt, formatScore, toDataUrl } from "@/lib/format";
+import type {
+  AnalysisImageKey,
+  AnalysisImages,
+  ImageInfo,
+  IsolatedRegion,
+} from "@/types/api";
 
 /**
  * Tabbed viewer over the backend visualisations (services/visualization.py
@@ -12,8 +18,11 @@ import type { AnalysisImageKey, AnalysisImages, ImageInfo } from "@/types/api";
  * present and non-empty in the response — nothing is invented, nothing
  * renders broken.
  *
- * `images.isolated_regions` is still returned by the backend but deliberately
- * has no tab: isolated regions are not part of this dashboard's conclusions.
+ * The Land Isolation tab sits between the candidate mask and the final
+ * result because that is where it belongs in the pipeline: it reads the same
+ * non-water mask the candidate stage produces, but answers a different
+ * question — which land is cut off — and it feeds nothing downstream. Zone
+ * ranking never sees it.
  *
  * Legend colours mirror the exact BGR constants the backend draws with,
  * converted to RGB. Each legend lists only what that image actually shows.
@@ -60,6 +69,16 @@ const TABS: TabDefinition[] = [
     ],
   },
   {
+    key: "isolated_regions",
+    label: "Land Isolation",
+    caption:
+      "Patches of land that are disconnected from the largest landmass by detected water, each scored 0–100 on how cut off its geometry is. Land geometry only: the system does not detect people and makes no statement about occupancy. This view does not affect zone ranking.",
+    legend: [
+      { color: "#145ac8", label: "Detected water" },
+      { color: "#ff8c00", label: "Potentially isolated land region" },
+    ],
+  },
+  {
     key: "final_analysis",
     label: "Final Result",
     caption:
@@ -79,12 +98,106 @@ const TABS: TabDefinition[] = [
   },
 ];
 
+/** Bands from services/isolated_regions.py::classify_isolation. */
+const ISOLATION_BANDS: IsolatedRegion["classification"][] = [
+  "HIGH ISOLATION",
+  "MODERATE ISOLATION",
+  "LOW ISOLATION",
+];
+
+/** How many individual regions to list under the image. */
+const ISOLATION_PREVIEW_COUNT = 3;
+
+/**
+ * Region readout shown only under the Land Isolation view. Every number is
+ * read straight from `isolated_regions` in the response; the backend already
+ * sorts them highest-score first and renumbers them 1..N.
+ */
+function IsolationSummary({ regions }: { regions: IsolatedRegion[] }) {
+  const counts = ISOLATION_BANDS.map((band) => ({
+    band,
+    count: regions.filter((region) => region.classification === band).length,
+  })).filter((entry) => entry.count > 0);
+
+  const preview = regions.slice(0, ISOLATION_PREVIEW_COUNT);
+
+  return (
+    <div className="border-t border-line px-4 py-4 sm:px-5">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <span className="text-sm font-medium text-ink">
+          {formatInt(regions.length)}{" "}
+          {regions.length === 1 ? "region" : "regions"} detected
+        </span>
+        {counts.map(({ band, count }) => {
+          const tone = toneFor(band);
+          return (
+            <span
+              key={band}
+              className={`flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.06em] ${tone.text}`}
+            >
+              <span
+                aria-hidden="true"
+                className={`size-1.5 rounded-full ${tone.fill}`}
+              />
+              {count} {band.replace(" ISOLATION", "")}
+            </span>
+          );
+        })}
+      </div>
+
+      <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {preview.map((region) => {
+          const tone = toneFor(region.classification);
+          return (
+            <li
+              key={region.id}
+              className="rounded-md border border-line bg-raised px-3 py-2.5"
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-mono text-xs text-faint tabular-nums">
+                  #{region.id}
+                </span>
+                <span
+                  className={`font-mono text-lg font-medium leading-none tabular-nums ${tone.text}`}
+                >
+                  {formatScore(region.isolation_score)}
+                </span>
+              </div>
+              <p
+                className={`mt-1.5 text-[11px] font-medium uppercase tracking-[0.06em] ${tone.text}`}
+              >
+                {region.classification}
+              </p>
+              <p className="mt-1 text-[11px] text-muted tabular-nums">
+                {formatInt(region.pixel_area)} px ·{" "}
+                {Math.round(region.score_breakdown.water_contact_ratio * 100)}%
+                water edge
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+
+      {regions.length > preview.length ? (
+        <p className="mt-2 text-xs text-faint">
+          Showing the {preview.length} most isolated of{" "}
+          {formatInt(regions.length)}. Every region is labelled in the image
+          above.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function ImageWorkspace({
   images,
   imageInfo,
+  isolatedRegions = [],
 }: {
   images: AnalysisImages;
   imageInfo: ImageInfo;
+  /** `isolated_regions` from the response — powers the readout on that tab. */
+  isolatedRegions?: IsolatedRegion[];
 }) {
   // Keep only tabs whose base64 payload actually arrived.
   const available = useMemo(
@@ -137,6 +250,9 @@ export function ImageWorkspace({
       </Panel>
     );
   }
+
+  const showIsolation =
+    active.key === "isolated_regions" && isolatedRegions.length > 0;
 
   return (
     <Panel className="overflow-hidden">
@@ -216,6 +332,8 @@ export function ImageWorkspace({
           </span>
         </div>
       </div>
+
+      {showIsolation ? <IsolationSummary regions={isolatedRegions} /> : null}
     </Panel>
   );
 }

@@ -17,9 +17,12 @@ import type { AnalysisResponse } from "@/types/api";
  * unmodified response of POST /api/analyze. No metric is derived, defaulted
  * or hardcoded here.
  *
- * Potentially isolated land regions are still computed and returned by the
- * backend (`result.isolated_regions`) but are intentionally not presented on
- * this dashboard: its conclusion is the ranked potential zones.
+ * Potentially isolated land regions (`result.isolated_regions`) are presented
+ * inside the visualization block, as the Land Isolation tab — between the
+ * candidate mask and the final result, which is where they sit in the
+ * pipeline. They are reported, never concluded from: the dashboard's
+ * conclusion is still the ranked potential zones, and nothing about isolation
+ * feeds zone scoring.
  */
 export function ResultsDashboard({
   result,
@@ -30,13 +33,16 @@ export function ResultsDashboard({
   fileName: string;
   onReset: () => void;
 }) {
-  const { metrics, zones, image_info: imageInfo } = result;
+  const {
+    metrics,
+    zones,
+    isolated_regions: isolatedRegions,
+    image_info: imageInfo,
+  } = result;
 
-  // The backend's isolated-region note refers to a view this dashboard no
-  // longer shows, so it is left out rather than shown without context.
-  const notes = result.warnings.filter(
-    (warning) => !/isolated land region/i.test(warning),
-  );
+  // Every backend warning is shown now that each one refers to a view the
+  // dashboard actually presents.
+  const notes = result.warnings;
 
   const zoneCount =
     zones.length === 0
@@ -95,7 +101,7 @@ export function ResultsDashboard({
       {/* -------------------------------------------------------- summary */}
       <section>
         <SectionHeading title="Summary" />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             label="Water coverage"
             value={formatPercent(metrics.water_percentage)}
@@ -116,6 +122,11 @@ export function ResultsDashboard({
               metrics.candidate_area_percentage,
             )} of the image.`}
           />
+          <MetricCard
+            label="Isolated land regions"
+            value={formatInt(metrics.isolated_regions)}
+            caption="Land patches disconnected from the largest landmass by detected water. Geometry only — see the Land Isolation tab."
+          />
         </div>
       </section>
 
@@ -126,7 +137,11 @@ export function ResultsDashboard({
           description="Each tab shows one stage of the analysis. Final Result is the summary view."
         />
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-          <ImageWorkspace images={result.images} imageInfo={imageInfo} />
+          <ImageWorkspace
+            images={result.images}
+            imageInfo={imageInfo}
+            isolatedRegions={isolatedRegions}
+          />
           <div className="lg:self-start">
             <ScanParameters parameters={result.parameters} imageInfo={imageInfo} />
           </div>
