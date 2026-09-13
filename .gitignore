@@ -28,15 +28,6 @@ uploads/
 *.tif
 *.tiff
 
-# AI model weights (auto-downloaded on first use, see services/ai_detection.py)
-backend/app/services/weights/
-*.pt
-
-# Ultralytics CLI output (created if `yolo predict` etc. is run manually)
-runs/
-
-# Frontend
+# Frontend (when it exists)
 node_modules/
-.next/
-frontend/out/
-.env*.local
+frontend/dist/

@@ -3,7 +3,8 @@
 FastAPI + OpenCV. The core water-detection and zone-scoring pipeline is pure
 computer vision — no trained model, no external API, no API key, no cloud
 service. A separate, optional module (`app/services/ai_detection.py`) adds a
-small YOLO11n object-detection pass as supplementary context; see
+small YOLO11n object-detection pass (ONNX Runtime, CPU) as supplementary
+context; see
 [Supplementary AI](#supplementary-ai-object-detection) below. It never
 influences the OpenCV pipeline and the backend works fully without it.
 
@@ -15,16 +16,14 @@ python -m venv .venv
 # Windows:   .venv\Scripts\activate
 # Linux/mac: source .venv/bin/activate
 pip install -r requirements.txt
-pip install --no-deps ultralytics==8.3.253
 uvicorn app.main:app --reload --port 8000
 ```
 
-Two install commands, not one: `ultralytics` declares a hard dependency on
-`opencv-python`, which conflicts with this project's `opencv-python-headless`
-(both provide the `cv2` module). Installing it separately with `--no-deps`
-avoids that conflict — see the comment at the bottom of `requirements.txt`
-for the full explanation. Every other dependency `ultralytics` needs is
-already listed in `requirements.txt`.
+One install command. The AI supplement runs on ONNX Runtime rather than
+PyTorch + ultralytics, which removed both the ~730 MB CUDA wheel problem and
+the `opencv-python` / `opencv-python-headless` conflict that previously
+forced a second `--no-deps` install step. See the comment block in
+`requirements.txt` for the reasoning.
 
 `uvicorn` must be started from the `backend/` directory so that `app` is
 importable. Requires Python 3.13 (pinned in `.python-version`).
@@ -103,25 +102,65 @@ this project.
 
 ## Supplementary AI object detection
 
-`app/services/ai_detection.py` runs a small Ultralytics **YOLO11n** model
-over the same resized image the OpenCV stages use, to report visible
+`app/services/ai_detection.py` runs a small **YOLO11n** model through **ONNX
+Runtime (CPU)** over the same resized image the OpenCV stages use, to report
+visible
 `person`, `car`, `truck`, `bus`, `boat`, `motorcycle` and `bicycle` objects as
 extra context. It:
 
-- loads lazily (never at process startup) and is cached after the first
-  successful load;
-- downloads its ~5.6 MB weight file automatically on first use to
-  `app/services/weights/` (needs internet only that first time);
+- loads lazily (never at process startup) and is cached for the process
+  lifetime after the first successful load;
+- ships its model as a committed `app/services/weights/yolo11n.onnx`
+  (~10 MB) — nothing is downloaded at runtime, so a cold start needs no
+  internet access and cannot half-download a cache;
+- runs single-threaded with the ONNX CPU memory arena disabled, so working
+  memory is released after each inference instead of being held as a
+  high-water mark — this is what lets it run inside a 512 MB instance;
 - runs once per request, independently of the OpenCV pipeline — its output
   is attached to the response and never fed back into water detection,
   candidate regions, or zone scoring;
-- fails safe: if `ultralytics`/`torch` aren't installed, the download fails,
+- fails safe: if `onnxruntime` isn't installed, the model file is missing,
   or inference errors, `/api/analyze` still returns a complete OpenCV result
   with `analysis_mode.ai = false` and a short, safe `ai.message`. No
   traceback ever reaches the client.
 
 Detecting a person or vehicle is reported only as a visible object — never as
 a flood victim, a stranded person, or a rescue asset.
+
+### Environment variables
+
+| Variable | Default | Effect |
+|---|---|---|
+| `AI_ENABLED` | `true` | Set to `false` to disable object detection entirely — no code change, no redeploy. The API reports `analysis_mode.ai = false` and every OpenCV result is unaffected. This is the kill switch to use if a deployment shows memory pressure. |
+| `AI_INPUT_SIZE` | `640` | Square network input edge (multiple of 32). `480` roughly halves inference cost on a CPU-starved instance at some accuracy cost. |
+| `AI_MEM_ARENA` | `false` | Set to `true` to enable onnxruntime's CPU memory arena — faster, higher peak memory. Only worth it above 512 MB. |
+
+### Exporting the model
+
+The repository ships `app/services/weights/yolo11n.onnx`. To regenerate it
+(requires ultralytics in a scratch environment, not in this project's):
+
+```bash
+pip install ultralytics
+yolo export model=yolo11n.pt format=onnx opset=12
+# move the produced yolo11n.onnx to backend/app/services/weights/
+```
+
+### Verifying a change to the AI module
+
+```bash
+cd backend
+python -m tests.verify_onnx                    # uses tests/output/*.png
+python -m tests.verify_onnx path/to/aerial.jpg
+python -m tests.verify_onnx --loops 20         # repeat-run memory behaviour
+```
+
+Reports load success, detections, per-run timing, RSS growth across repeated
+inferences, and — if `ultralytics` happens to still be installed — a
+side-by-side parity check against the old torch path. It also writes
+`tests/output/onnx_verify.png`: **open it**. Boxes landing on the wrong
+objects means the letterbox mapping is wrong, and no unit test will tell you
+that.
 
 ## Offline pipeline check
 
@@ -135,8 +174,7 @@ Prints metrics, zones, isolated regions and the YOLO detection summary, and
 writes every visualisation to `tests/output/`. The synthetic scene proves the
 pipeline runs end to end; it is **not** an accuracy benchmark.
 
-> Run it as a script (`python tests/smoke_test.py`), not as
-> `python -m tests.smoke_test`: the `ultralytics` package installs its own
-> `tests/` directory into `site-packages`, which shadows this project's
-> `tests` package under `-m` module resolution. Running the file directly
-> avoids the collision.
+> The old warning about running this as a script rather than with `-m` no
+> longer applies: it existed because the `ultralytics` package installs its
+> own `tests/` directory into `site-packages`, shadowing this project's
+> `tests` package. With ultralytics gone, either invocation works.

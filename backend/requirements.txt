@@ -7,47 +7,35 @@ pillow==11.0.0
 
 # opencv-python-headless (not opencv-python): identical `cv2` API, no GUI/X11
 # dependency (libGL.so.1 etc.), which minimal Linux deployment images (e.g.
-# Render) frequently lack. Verified: this codebase calls no GUI function
-# (imshow/waitKey/namedWindow/VideoCapture), so headless is a safe drop-in —
-# confirmed by re-running the full pipeline + YOLO inference against it with
-# identical output.
+# Render) frequently lack. This codebase calls no GUI function
+# (imshow/waitKey/namedWindow/VideoCapture), so headless is a safe drop-in.
 opencv-python-headless==4.10.0.84
 
-# Optional AI supplement (services/ai_detection.py) — supplementary YOLO
-# object-detection context only, never a dependency of the OpenCV pipeline.
-# If these fail to install or load at runtime, the API still works:
-# analysis_mode.ai reports False and every OpenCV result is unaffected.
+# --------------------------------------------------------------------------
+# Optional AI supplement (services/ai_detection.py)
+# --------------------------------------------------------------------------
+# ONNX Runtime replaces the previous torch + torchvision + ultralytics stack.
 #
-# --extra-index-url + the explicit "+cpu" version selects PyTorch's own
-# dedicated CPU-only wheels. Without this, plain `torch==2.6.0` resolves to
-# the default PyPI Linux wheel, which bundles CUDA and is ~730 MB instead of
-# ~180 MB (verified against PyPI's published file sizes) — unnecessary
-# weight and a much slower/larger deploy for a CPU-only service, and not
-# needed since this project never uses a GPU.
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.6.0+cpu
-torchvision==0.21.0+cpu
-
-# ultralytics (YOLO11n) is installed SEPARATELY, with --no-deps — see the
-# install commands below and in backend/README.md. Reason: ultralytics
-# declares a hard dependency on plain "opencv-python" (not -headless), and
-# pip cannot apply --no-deps to a single line of one requirements.txt while
-# resolving the rest normally. Letting a normal `pip install ultralytics`
-# run here would silently install a second, conflicting `opencv-python`
-# alongside opencv-python-headless (both provide the `cv2` module — verified
-# empirically that pip installs both if this isn't done as a separate,
-# --no-deps step). The lines below cover every other runtime dependency
-# ultralytics 8.3.253 declares (checked via
-# `importlib.metadata.requires("ultralytics")`), pinned to the exact
-# versions verified to install and run cleanly together:
-matplotlib==3.11.2
-PyYAML==6.0.3
-requests==2.34.2
-scipy==1.18.1
-psutil==7.2.2
-polars==1.44.2
-ultralytics-thop==2.1.6
-
-# Install with:
-#   pip install -r requirements.txt
-#   pip install --no-deps ultralytics==8.3.253
+# Why: that stack could not run on a 512 MB instance. Importing torch alone
+# costs ~250-300 MB RSS before a single image is processed, and the CPU wheel
+# is ~180 MB installed (the default PyPI Linux wheel bundles CUDA and is
+# ~730 MB). onnxruntime with yolo11n is roughly a fifth of that, which is what
+# makes AI context viable on the free deployment tier at all.
+#
+# Consequences of the swap, all handled in ai_detection.py:
+#   * the model ships as a pre-exported app/services/weights/yolo11n.onnx
+#     (~10 MB, committed) instead of being downloaded at runtime — a cold
+#     start needs no internet and cannot half-download a cache
+#   * ultralytics' pre/post-processing is gone, so letterboxing, output
+#     decoding and per-class NMS are implemented explicitly there
+#   * the opencv-python conflict that forced the old two-step `--no-deps`
+#     install disappears: onnxruntime has no opencv dependency, so a single
+#     `pip install -r requirements.txt` is now the whole build
+#
+# Version floor rather than an exact pin: this project targets Python 3.13
+# (backend/.python-version) and 1.20 is the first onnxruntime release with
+# cp313 wheels. Pinning an exact version risks selecting one with no wheel
+# for the deployed interpreter, which fails the build outright; the floor lets
+# pip resolve the newest compatible wheel. Pin it once you have a known-good
+# build log.
+onnxruntime>=1.20,<2

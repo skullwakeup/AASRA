@@ -19,21 +19,20 @@ below). All commands and paths below assume this.
 ### Build command
 
 ```
-pip install -r requirements.txt && pip install --no-deps ultralytics==8.3.253
+pip install -r requirements.txt
 ```
 
-Two steps are required, not one. `ultralytics` declares a hard dependency on
-`opencv-python` (not `opencv-python-headless`), and pip has no way to apply
-`--no-deps` to a single line of a requirements file while resolving
-everything else normally. Installing `ultralytics` separately with
-`--no-deps` after everything else is in place avoids pip additionally
-installing a second, conflicting `opencv-python` package alongside
-`opencv-python-headless` (verified: without this, `pip install -r
-requirements.txt` with a naive `ultralytics` line installs **both**
-`opencv-python` and `opencv-python-headless` side by side, which is a
-broken, unsupported combination since both packages provide the same `cv2`
-module). This is documented in a comment at the bottom of
-`backend/requirements.txt`.
+One step. This replaced an earlier two-step build
+(`... && pip install --no-deps ultralytics==8.3.253`) that existed solely
+because `ultralytics` declares a hard dependency on `opencv-python` (not
+`-headless`), and pip cannot apply `--no-deps` to one line of a requirements
+file while resolving the rest normally. Without the separate step, pip
+installed **both** `opencv-python` and `opencv-python-headless` side by side
+— a broken combination, since both provide the same `cv2` module.
+
+The AI supplement now runs on ONNX Runtime, which has no opencv dependency,
+so the conflict no longer exists. See "ONNX Runtime instead of PyTorch"
+below for why the swap happened.
 
 ### Start command
 
@@ -64,37 +63,24 @@ created and is not guaranteed to match this project's tested version.
 
 No API keys or secrets are required anywhere in this project.
 
-### YOLO model weight download
+### YOLO model weights
 
-`app/services/ai_detection.py` downloads the ~5.6 MB YOLO11n weight file to
-`app/services/weights/yolo11n.pt` the first time it's needed (lazily, not at
-process startup), and reuses it for the life of the running instance. On
-Render:
+The model ships with the repository as
+`backend/app/services/weights/yolo11n.onnx` (~10 MB). Nothing is downloaded
+at runtime.
 
-- The service needs outbound internet access for that first download —
-  Render web services have this by default.
-- The instance's local filesystem is writable at runtime, so the download
-  itself will succeed without any extra configuration.
-- The filesystem is **ephemeral**: a redeploy or restart wipes it, so the
-  first request after every deploy/restart pays the download cost again
-  (a few seconds). This does not require a persistent disk to work
-  correctly — the code already handles a missing/re-downloaded weight file
-  transparently — but it does mean the very first request after a deploy is
-  slower than the rest.
-- **Optional improvement, not required for correctness:** add a
-  pre-warming step to the build command so the weight is already present
-  before the instance starts serving traffic, catching any download failure
-  at build time instead of on a user's first request:
+This replaced a lazy download of `yolo11n.pt` on first use. Render's
+filesystem is **ephemeral** — a redeploy or restart wiped the cache, so the
+first request after every deploy paid the download cost again, and a
+transient network failure produced a half-written file. Committing the
+exported model removes both problems: a cold start needs no outbound
+internet for the AI path, and the file cannot be partially present.
 
-  ```
-  pip install -r requirements.txt && pip install --no-deps ultralytics==8.3.253 && python -c "from ultralytics import YOLO; YOLO('app/services/weights/yolo11n.pt')"
-  ```
-
-  If the AI dependencies or the download fail for any reason (with or
-  without this pre-warm step), the app does not crash: `analysis_mode.ai`
-  reports `false` and every OpenCV result is still returned normally — this
-  was verified in an earlier pass of this project by simulating both a
-  missing `ultralytics` import and a model-load exception.
+If the model file is missing or `onnxruntime` is not installed, the app does
+not crash: `analysis_mode.ai` reports `false`, `ai.message` explains which of
+the two it was, and every OpenCV result is still returned normally.
+`GET /health` reports the same thing under `ai_runtime` without loading the
+model, so you can check a deployment's AI state without sending an image.
 
 ### OpenCV compatibility
 
@@ -109,15 +95,55 @@ a safe, behavior-identical replacement. Verified by re-running the full
 pipeline (water detection → zone scoring) and a real YOLO inference against
 a fresh install of the headless package: identical output.
 
-### PyTorch / Ultralytics wheel size
+### ONNX Runtime instead of PyTorch
 
-`requirements.txt` uses `--extra-index-url https://download.pytorch.org/whl/cpu`
-with explicit `torch==2.6.0+cpu` / `torchvision==0.21.0+cpu` pins. Without
-this, plain `torch==2.6.0` resolves to the default PyPI Linux wheel, which
-bundles full CUDA support and is **~730 MB** (verified against PyPI's own
-published file size) versus **~180 MB** for the genuine CPU-only wheel this
-project actually needs, since no code here uses a GPU. This directly affects
-Render build time and deploy size for no benefit.
+The AI supplement originally ran on `torch` + `torchvision` + `ultralytics`.
+That stack does not fit Render's **free instance type: 0.1 CPU / 512 MB
+RAM**. Importing `torch` alone costs roughly 250-300 MB RSS before a single
+image is processed; adding OpenCV, NumPy, FastAPI and per-request image
+buffers leaves no headroom under a hard 512 MB cap, and the process is
+OOM-killed rather than degrading gracefully.
+
+Install size was a secondary problem: `requirements.txt` had to pin
+`torch==2.6.0+cpu` via `--extra-index-url https://download.pytorch.org/whl/cpu`,
+because plain `torch==2.6.0` resolves to the default PyPI Linux wheel that
+bundles CUDA at **~730 MB** versus **~180 MB** for the CPU-only wheel — for a
+service that never touches a GPU.
+
+ONNX Runtime with `yolo11n.onnx` is roughly a fifth of the memory, which is
+what makes the AI supplement viable on the free tier at all. The trade is
+that ultralytics' pre/post-processing is no longer available, so letterboxing,
+output decoding and per-class NMS are implemented explicitly in
+`ai_detection.py` and covered by `backend/tests/verify_onnx.py`.
+
+Note that upgrading the Render plan does **not** solve the memory problem
+cheaply: the Starter plan is also 512 MB (it adds CPU, not RAM). The first
+plan with real headroom is 1 CPU / 2 GB.
+
+#### Memory behaviour on a 512 MB instance
+
+Approximate steady-state budget with the AI supplement active:
+
+| Component | Approx. RSS |
+|---|---|
+| Python + FastAPI + uvicorn | ~70 MB |
+| NumPy + OpenCV (headless) | ~110 MB |
+| onnxruntime session + yolo11n | ~120 MB |
+| Per-request buffers + five base64 PNGs | ~40-60 MB, transient |
+
+Memory **plateaus** across repeated images rather than climbing: the session
+is created once and cached for the process lifetime, and the CPU memory arena
+is disabled (`AI_MEM_ARENA=false`) so working memory is released after each
+inference instead of being retained as a high-water mark. The risk on this
+tier is a *spike* — two simultaneous uploads, or one unusually large image —
+not gradual accumulation. `POST /api/analyze` is an `async def` that calls
+blocking CPU code, so requests serialise on the event loop, which limits that
+spike in practice.
+
+`GET /health` reports this process's RSS under `memory.rss_mb`. Watch it
+during a demo. If it approaches the cap, set `AI_ENABLED=false` in the Render
+dashboard: the service restarts in about a minute and returns to
+OpenCV-only behaviour with no redeploy and no code change.
 
 ### File upload size
 
@@ -130,8 +156,7 @@ Render-platform limit to check directly with Render, not an application bug.
 
 ### Filesystem assumptions
 
-Aside from the one-time YOLO weight cache (above), the request-handling code
-writes nothing to disk: every image is processed in memory (NumPy arrays)
+The request-handling code writes nothing to disk: every image is processed in memory (NumPy arrays)
 and returned as base64-encoded PNGs in the JSON response. `tests/smoke_test.py`
 writes files to `tests/output/`, but that script is a local/offline
 developer check, not part of the deployed API path.
@@ -196,16 +221,16 @@ dashboard using the build/start commands documented above.
 
 | Item | Status |
 |---|---|
-| Backend `requirements.txt` pinned and Linux/Render-compatible | Done — headless OpenCV, CPU-only PyTorch wheels, ultralytics installed via a documented two-step command |
+| Backend `requirements.txt` pinned and Linux/Render-compatible | Done — headless OpenCV; the AI supplement runs on ONNX Runtime, so a single `pip install -r requirements.txt` is the whole build |
 | Python version pinned | Done — `backend/.python-version` (`3.13`) + `PYTHON_VERSION` in `render.yaml` |
 | FastAPI start command matches `uvicorn app.main:app --host 0.0.0.0 --port $PORT` | Confirmed — tested locally with an arbitrary `$PORT` |
 | CORS allows the deployed frontend without a wildcard | Done — `CORS_ORIGINS` env var, localhost always allowed, tested both cases |
 | Environment variables identified | `CORS_ORIGINS` (backend), `NEXT_PUBLIC_API_URL` (frontend) — both optional-with-safe-defaults for local dev |
-| YOLO weight download behavior understood | Lazy, cached, ephemeral-filesystem-safe; optional build-time pre-warm documented |
+| YOLO weights | Committed as `yolo11n.onnx`; no runtime download, so the ephemeral filesystem is no longer a factor |
 | File upload size handling | Unchanged, already enforced in-app at 15 MB |
 | Temporary files / filesystem assumptions | No disk writes during request handling other than the one-time model cache |
 | OpenCV deployment compatibility | Fixed — switched to `opencv-python-headless`, verified no behavior change |
-| PyTorch/Ultralytics dependency compatibility | Fixed — CPU-only wheels, verified `--no-deps` install avoids the opencv conflict, verified full pipeline + YOLO still run correctly |
+| AI runtime fits the deployment tier | Fixed — torch/ultralytics replaced with ONNX Runtime to fit 0.1 CPU / 512 MB; `AI_ENABLED` kill switch and `/health` memory reporting added |
 | Frontend API URL configuration | Already correct — env-var driven, no code change needed |
 | No hardcoded localhost/Render URLs | Confirmed — only the documented dev-fallback default in `lib/api.ts` |
 | `.gitignore` completeness | Reviewed — already covers venvs, model weights, `runs/`, build artifacts, `.env*.local`, Vercel/Next.js artifacts; nothing missing found |

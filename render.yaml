@@ -16,11 +16,11 @@ services:
     name: aasra-backend
     runtime: python
     rootDir: backend
-    # ultralytics is installed separately, with --no-deps — see the comment
-    # at the bottom of backend/requirements.txt for why.
-    buildCommand: >-
-      pip install -r requirements.txt &&
-      pip install --no-deps ultralytics==8.3.253
+    # A single install step. The previous two-step build (a separate
+    # `pip install --no-deps ultralytics`) existed only to avoid ultralytics
+    # pulling in a second, conflicting opencv-python. onnxruntime has no
+    # opencv dependency, so that whole problem is gone.
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
@@ -29,12 +29,37 @@ services:
       # monorepo root-directory handling does not pick up that file.
       - key: PYTHON_VERSION
         value: "3.13"
+
       # Comma-separated list of allowed frontend origins, e.g.
-      #   https://aasra.vercel.app,https://aasra-git-main-you.vercel.app
+      #   https://aasra-fawn.vercel.app,https://aasra-git-main-you.vercel.app
       # Left unset here (sync: false) rather than hardcoded, since the
       # Vercel URL isn't known until the frontend is first deployed. Set
       # the real value in the Render dashboard once it is. Local development
       # (http://localhost:3000) is always allowed by the app itself and does
       # not need this variable.
+      # No trailing slash — origins are matched exactly.
       - key: CORS_ORIGINS
         sync: false
+
+      # ---- AI supplement controls (services/ai_detection.py) -------------
+      # KILL SWITCH. Set to "false" in the Render dashboard to disable object
+      # detection entirely without a redeploy: the service restarts, the API
+      # reports analysis_mode.ai = false, and every OpenCV result is
+      # unaffected. Use it if the instance shows memory pressure during a
+      # live demo — this is the fastest way back to a known-good state.
+      - key: AI_ENABLED
+        value: "true"
+
+      # Square network input edge, multiple of 32. 640 is the export default.
+      # 480 roughly halves inference cost on a CPU-starved instance at some
+      # accuracy cost — worth trying if analysis feels slow on the free plan
+      # (0.1 CPU).
+      - key: AI_INPUT_SIZE
+        value: "640"
+
+      # onnxruntime's CPU memory arena is disabled by default in the app,
+      # which keeps peak RSS down by releasing working memory after each
+      # inference instead of retaining a high-water mark. Set to "true" to
+      # trade memory for a little speed on a larger instance.
+      - key: AI_MEM_ARENA
+        value: "false"

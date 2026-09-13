@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, File, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 
 from . import config
 from .pipeline import run_analysis
+from .services import ai_detection
 from .services.preprocessing import ImageDecodeError, ImageTooSmallError
 
 logger = logging.getLogger("aasra")
@@ -71,15 +72,43 @@ def _error(message: str, code: str, http_status: int) -> JSONResponse:
     )
 
 
+def _process_memory_mb() -> Optional[float]:
+    """Resident set size of this process in MB, or None where unavailable.
+
+    Read straight from /proc/self/status so this needs no psutil dependency.
+    Returns None on any platform without procfs (e.g. Windows during local
+    development) rather than raising — /health must never fail.
+    """
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("VmRSS:"):
+                    kilobytes = float(line.split()[1])
+                    return round(kilobytes / 1024.0, 1)
+    except Exception:
+        return None
+    return None
+
+
 @app.get("/health")
 def health() -> Dict[str, Any]:
-    """Confirm the backend is running and report the active configuration."""
-    return {
+    """Confirm the backend is running and report the active configuration.
+
+    Also surfaces the AI supplement's real availability and this process's
+    memory use — both are what you want visible when running on a small
+    instance. The AI check is a cheap capability probe: it never builds an
+    inference session, so a health check cannot itself trigger the
+    out-of-memory condition it is meant to help you watch for.
+    """
+    ai_probe = ai_detection.probe_availability()
+
+    payload: Dict[str, Any] = {
         "success": True,
         "status": "ok",
         "service": config.APP_NAME,
         "version": config.APP_VERSION,
-        "analysis_mode": dict(config.ANALYSIS_MODE),
+        "analysis_mode": {"opencv": True, "ai": bool(ai_probe.get("available"))},
+        "ai_runtime": ai_probe,
         "limits": {
             "max_file_size_mb": config.MAX_FILE_SIZE_MB,
             "max_image_dimension": config.MAX_IMAGE_DIMENSION,
@@ -87,6 +116,12 @@ def health() -> Dict[str, Any]:
             "max_zones": config.MAX_ZONES,
         },
     }
+
+    memory_mb = _process_memory_mb()
+    if memory_mb is not None:
+        payload["memory"] = {"rss_mb": memory_mb}
+
+    return payload
 
 
 @app.get("/")
