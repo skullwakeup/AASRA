@@ -1,0 +1,7 @@
+# AASRA backend — Phase 1 (OpenCV only, no AI/ML yet)
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+opencv-python==4.10.0.84
+numpy==2.1.3
+pillow==11.0.0
