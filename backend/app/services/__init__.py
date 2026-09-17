@@ -3,7 +3,7 @@
 __all__ = [
     "preprocessing",
     "water_detection",
-    "drop_zone_detection",
+    "candidate_mask",
     "region_analysis",
     "isolated_regions",
     "scoring",

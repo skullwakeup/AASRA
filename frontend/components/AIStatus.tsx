@@ -34,7 +34,7 @@ export function AIStatus({ mode, ai }: { mode: AnalysisMode; ai?: AIContext }) {
     : [];
 
   return (
-    <Panel className="p-4 sm:p-5">
+    <Panel className="p-5 sm:p-6">
       <div className="grid gap-5 md:grid-cols-[180px_minmax(0,1fr)] md:gap-8">
         <dl className="flex gap-8 text-sm md:flex-col md:gap-3">
           <div>
@@ -67,7 +67,7 @@ export function AIStatus({ mode, ai }: { mode: AnalysisMode; ai?: AIContext }) {
                     const count = ai?.counts?.[key] ?? 0;
                     return (
                       <li key={key}>
-                        <span className="block font-mono text-xl leading-none text-ink tabular-nums">
+                        <span className="display block font-mono text-[32px] text-ink tabular-nums">
                           {count}
                         </span>
                         <span className="mt-1 block text-xs text-muted">
@@ -85,7 +85,8 @@ export function AIStatus({ mode, ai }: { mode: AnalysisMode; ai?: AIContext }) {
               <p className="mt-4 max-w-2xl text-xs leading-relaxed text-faint">
                 Visible-object context only. A detected person or vehicle is not
                 evidence of a flood victim, a stranded person or a rescue asset,
-                and detections are never used in water analysis or zone ranking.
+                and detections never change the water mask, the storage zones or
+                the drop zones.
               </p>
             </>
           ) : (

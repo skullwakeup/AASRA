@@ -54,11 +54,29 @@ export interface ScoreWeights {
   openness: number;
 }
 
+export interface DropScoreWeights {
+  clearance: number;
+  water_clearance: number;
+  proximity: number;
+}
+
+/** config.py storage / drop-zone settings used for this run. */
+export interface StorageParameters {
+  radius_margin_px: number;
+  min_radius_px: number;
+  max_radius_px: number;
+  drop_zone_radius_px: number;
+  min_drop_point_distance_px: number;
+  max_drop_points_per_storage_zone: number;
+  drop_score_weights: DropScoreWeights;
+}
+
 export interface AnalysisParameters {
   water_buffer_px: number;
   min_region_area_px: number;
   min_isolated_area_px: number;
   max_zones: number;
+  storage: StorageParameters;
   score_weights: ScoreWeights;
 }
 
@@ -68,6 +86,10 @@ export interface AnalysisMetrics {
   /** Total candidate regions found — may exceed `zones.length` (capped at max_zones). */
   candidate_regions: number;
   isolated_regions: number;
+  /** Ranked zones that produced a probable storage zone. */
+  storage_zones: number;
+  /** Probable drop zones across all storage zones. */
+  drop_zones: number;
   candidate_area_percentage: number;
 }
 
@@ -111,6 +133,90 @@ export interface Zone {
   score_breakdown: ZoneScoreBreakdown;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Probable storage zones / probable drop zones (services/storage_zones.py)    */
+/* -------------------------------------------------------------------------- */
+
+export interface DropZoneScoreBreakdown {
+  /** min(1, clearance / storage radius) * 100 */
+  clearance_score: number;
+  /** min(1, water clearance / saturation) * 100 */
+  water_clearance_score: number;
+  /** (1 - distance from centre / storage radius) * 100 */
+  proximity_score: number;
+}
+
+/** One probable drop zone: a small circle around an exact drop point. */
+export interface DropZone {
+  id: number;
+  point: Point;
+  radius_px: number;
+  /** 0-100 spatial drop-point score — separate from the zone score. */
+  score: number;
+  classification: ZoneClassification;
+  /** Distance to the nearest excluded pixel or image edge. */
+  clearance_px: number;
+  /** Distance to the nearest detected water pixel. */
+  water_clearance_px: number;
+  distance_from_storage_center_px: number;
+  score_breakdown: DropZoneScoreBreakdown;
+}
+
+export type LimitingFactor =
+  | "water_buffer"
+  | "candidate_boundary"
+  | "image_boundary"
+  | "max_radius";
+
+export type RejectionReason =
+  | "outside_image"
+  | "outside_storage_zone"
+  | "water"
+  | "water_buffer"
+  | "outside_candidate_region"
+  | "insufficient_clearance";
+
+export interface RejectedPoint {
+  x: number;
+  y: number;
+  reason: RejectionReason;
+}
+
+/**
+ * One probable storage zone. `id` equals `zone_id`, the ranked zone it
+ * extends; `score` and `classification` are that zone's.
+ */
+export interface StorageZone {
+  id: number;
+  zone_id: number;
+  score: number;
+  classification: ZoneClassification;
+  /** The ranked zone's max-clearance point, unchanged. */
+  center: Point;
+  radius_px: number;
+  limiting_factor: LimitingFactor;
+  /** Distance from the centre to the limiting pixel, before the margin. */
+  limiting_distance_px: number;
+  /** Null when the radius cap was the limit. */
+  limiting_point: Point | null;
+  water_clearance_px: number;
+  sampled_points: number;
+  sampling_ring_radii_px: number[];
+  candidate_drop_zones: DropZone[];
+  rejected_points: RejectedPoint[];
+}
+
+export type NotViableReason =
+  | "radius_below_minimum"
+  | "center_in_excluded_area"
+  | "duplicate_center";
+
+export interface StorageAnalysis {
+  evaluated: number;
+  viable: number;
+  not_viable: { zone_id: number; reason: NotViableReason; radius_px: number }[];
+}
+
 /** isolated_regions.classify_isolation() — the only three values emitted. */
 export type IsolationClassification =
   | "HIGH ISOLATION"
@@ -137,7 +243,7 @@ export interface IsolatedRegion {
 }
 
 /**
- * The five visualisations from services/visualization.py.
+ * The six visualisations from services/visualization.py, plus ai_context.
  * Each value is a RAW base64 PNG string (no `data:` prefix) — see toDataUrl().
  * An empty string means the backend could not encode that view.
  */
@@ -145,6 +251,8 @@ export interface AnalysisImages {
   original: string;
   water_mask: string;
   candidate_mask: string;
+  /** How each storage zone and its drop zones were derived. */
+  drop_zones: string;
   isolated_regions: string;
   final_analysis: string;
   /** Present only when AI inference actually succeeded for this request. */
@@ -208,6 +316,8 @@ export interface AnalysisResponse {
   parameters: AnalysisParameters;
   metrics: AnalysisMetrics;
   zones: Zone[];
+  storage_zones: StorageZone[];
+  storage_analysis: StorageAnalysis;
   isolated_regions: IsolatedRegion[];
   /** Non-fatal notes, e.g. "No water was detected in this image." */
   warnings: string[];

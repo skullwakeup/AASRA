@@ -6,7 +6,23 @@ This is a production-readiness reference for deploying AASRA as:
 - **Frontend** → Vercel (Next.js)
 
 Nothing in this document changes the OpenCV pipeline or YOLO detection
-behavior. It only covers packaging, configuration and hosting.
+behavior. It only covers packaging, configuration and hosting. The storage
+and drop-zone stage added no dependency and no environment variable; its
+settings are constants in `app/config.py`.
+
+## Release order
+
+The frontend now requires `storage_zones` and `parameters.storage` in the
+analysis response. **Deploy the backend first**, confirm
+`POST /api/analyze` returns `storage_zones`, then deploy the frontend. A new
+frontend talking to an older backend shows an "older version" error
+(`INCOMPATIBLE_BACKEND`) instead of results.
+
+The live service is `https://aasra-api.onrender.com`, while `render.yaml`
+names the service `aasra-backend`. If the live service was created by hand,
+the Blueprint is not in use and this does not matter; if you do sync the
+Blueprint, rename the service in `render.yaml` first so Render does not
+create a second service.
 
 ## Backend — Render
 
@@ -60,6 +76,9 @@ created and is not guaranteed to match this project's tested version.
 | `CORS_ORIGINS` | Recommended once the frontend URL is known | Comma-separated list of extra allowed origins, e.g. `https://aasra.vercel.app,https://aasra-git-main-you.vercel.app`. Local dev origins (`http://localhost:3000`, `http://127.0.0.1:3000`) are always allowed by the app itself and need no configuration. |
 | `PYTHON_VERSION` | Recommended | `3.13` — see above. |
 | `PORT` | Set automatically by Render | Do not set manually; `$PORT` in the start command reads it. |
+| `AI_ENABLED` | Optional (`true`) | Kill switch for the AI supplement. |
+| `AI_INPUT_SIZE` | Optional (`640`) | YOLO input edge; `480` is cheaper. |
+| `AI_MEM_ARENA` | Optional (`false`) | onnxruntime CPU arena. |
 
 No API keys or secrets are required anywhere in this project.
 
@@ -129,7 +148,15 @@ Approximate steady-state budget with the AI supplement active:
 | Python + FastAPI + uvicorn | ~70 MB |
 | NumPy + OpenCV (headless) | ~110 MB |
 | onnxruntime session + yolo11n | ~120 MB |
-| Per-request buffers + five base64 PNGs | ~40-60 MB, transient |
+| Per-request buffers + base64 PNGs | ~40-60 MB, transient (estimate from the earlier five-image response) |
+
+These figures were measured before the storage/drop-zone stage was added
+and were not re-measured on Linux for this change. The stage itself adds one
+distance transform and a few small masks per ranked zone (at most three
+1024 × 1024 arrays at a time) and one more PNG to the response: in the tested
+images the `drop_zones` image was about 0.7 MB of base64, and a complete
+response for a 1024-px image was about 7 MB. Check `memory.rss_mb` on the
+deployed instance after the first few analyses.
 
 Memory **plateaus** across repeated images rather than climbing: the session
 is created once and cached for the process lifetime, and the CPU memory arena
@@ -174,9 +201,10 @@ correct.
   `http://localhost:8000`), or via `frontend/.env.local` (gitignored, not
   committed).
 - **Production (Vercel):** set the environment variable
-  `NEXT_PUBLIC_API_URL` to the deployed Render backend's public URL (e.g.
-  `https://aasra-backend.onrender.com`) in the Vercel project's dashboard
-  under Settings → Environment Variables. Do not commit this value anywhere.
+  `NEXT_PUBLIC_API_URL` to the deployed Render backend's public URL
+  (currently `https://aasra-api.onrender.com`) in the Vercel project's
+  dashboard under Settings → Environment Variables. It is inlined at build
+  time, so redeploy the frontend after changing it.
 - Standard Vercel deployment for a Next.js App Router project needs no
   `vercel.json` — none was added.
 
@@ -228,9 +256,10 @@ dashboard using the build/start commands documented above.
 | Environment variables identified | `CORS_ORIGINS` (backend), `NEXT_PUBLIC_API_URL` (frontend) — both optional-with-safe-defaults for local dev |
 | YOLO weights | Committed as `yolo11n.onnx`; no runtime download, so the ephemeral filesystem is no longer a factor |
 | File upload size handling | Unchanged, already enforced in-app at 15 MB |
-| Temporary files / filesystem assumptions | No disk writes during request handling other than the one-time model cache |
+| Temporary files / filesystem assumptions | No disk writes during request handling |
 | OpenCV deployment compatibility | Fixed — switched to `opencv-python-headless`, verified no behavior change |
 | AI runtime fits the deployment tier | Fixed — torch/ultralytics replaced with ONNX Runtime to fit 0.1 CPU / 512 MB; `AI_ENABLED` kill switch and `/health` memory reporting added |
 | Frontend API URL configuration | Already correct — env-var driven, no code change needed |
 | No hardcoded localhost/Render URLs | Confirmed — only the documented dev-fallback default in `lib/api.ts` |
-| `.gitignore` completeness | Reviewed — already covers venvs, model weights, `runs/`, build artifacts, `.env*.local`, Vercel/Next.js artifacts; nothing missing found |
+| `.gitignore` completeness | Covers venvs, build artifacts, `.env*`, Vercel/Next.js artifacts, `backend/tests/output/` and the end-to-end QA artefacts (`frontend/e2e/fixtures/`, `frontend/e2e/screenshots/`, `.playwright-cli/`) |
+| Frontend static assets | `frontend/public/imagery/` holds four public-domain JPEGs (~1.4 MB total) served by Vercel as static files |

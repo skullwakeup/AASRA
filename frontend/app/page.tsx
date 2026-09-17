@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnalysisProgress } from "@/components/AnalysisProgress";
 import { Header, type HealthState } from "@/components/Header";
 import { ImagePreview } from "@/components/ImagePreview";
-import { PipelineStrip } from "@/components/PipelineStrip";
+import { Footer, Hero, ImageryBand, Method } from "@/components/Landing";
 import { ResultsDashboard } from "@/components/ResultsDashboard";
 import { ErrorState } from "@/components/States";
 import { UploadZone } from "@/components/UploadZone";
@@ -75,6 +75,13 @@ export default function Home() {
     }
   }, []);
 
+  const scrollToWorkspace = useCallback(() => {
+    // After React commits the new stage.
+    window.requestAnimationFrame(() =>
+      document.getElementById("analyze")?.scrollIntoView({ block: "start" }),
+    );
+  }, []);
+
   /* ----------------------------------------------------------- handlers */
   const handleSelect = useCallback(
     (selected: File) => {
@@ -89,21 +96,20 @@ export default function Home() {
       setResult(null);
       setFailure(null);
       setStage("ready");
+      scrollToWorkspace();
 
-      // Read the true pixel dimensions for the preview card.
+      // Read the true pixel dimensions for the preview.
       const probe = new window.Image();
       probe.onload = () => {
-        setDimensions({
-          width: probe.naturalWidth,
-          height: probe.naturalHeight,
-        });
+        setDimensions({ width: probe.naturalWidth, height: probe.naturalHeight });
       };
       probe.src = url;
     },
-    [releasePreview],
+    [releasePreview, scrollToWorkspace],
   );
 
   const handleReset = useCallback(() => {
+    const fromResults = stage === "results";
     abortRef.current?.abort();
     abortRef.current = null;
     releasePreview();
@@ -113,8 +119,13 @@ export default function Home() {
     setResult(null);
     setFailure(null);
     setStage("idle");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [releasePreview]);
+    if (fromResults) scrollToWorkspace();
+  }, [releasePreview, scrollToWorkspace, stage]);
+
+  const handleHome = useCallback(() => {
+    if (stage === "results") handleReset();
+    window.scrollTo({ top: 0 });
+  }, [handleReset, stage]);
 
   const handleAnalyze = useCallback(async () => {
     if (!file) return;
@@ -130,7 +141,7 @@ export default function Home() {
       if (controller.signal.aborted) return;
       setResult(response);
       setStage("results");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      window.scrollTo({ top: 0 });
     } catch (error) {
       if (controller.signal.aborted) return;
 
@@ -139,8 +150,7 @@ export default function Home() {
       } else {
         // Nothing internal is surfaced — only a clean, generic message.
         setFailure({
-          message:
-            "An unexpected problem stopped the analysis before it completed.",
+          message: "An unexpected problem stopped the analysis before it completed.",
           code: "UNEXPECTED_ERROR",
         });
       }
@@ -150,104 +160,84 @@ export default function Home() {
     }
   }, [file]);
 
-  const maxFileSizeMb =
-    health?.limits?.max_file_size_mb ?? DEFAULT_MAX_FILE_SIZE_MB;
+  const maxFileSizeMb = health?.limits?.max_file_size_mb ?? DEFAULT_MAX_FILE_SIZE_MB;
+  const offline = healthState === "offline";
 
   return (
     <>
-      <Header />
+      <Header health={healthState} onHome={handleHome} />
 
-      <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+      <main className="flex-1">
         {stage === "results" && result ? (
-          <ResultsDashboard
-            result={result}
-            fileName={file?.name ?? ""}
-            onReset={handleReset}
-          />
+          <ResultsDashboard result={result} fileName={file?.name ?? ""} onReset={handleReset} />
         ) : (
-          <div className="mx-auto w-full max-w-3xl">
-            <Intro />
+          <>
+            <Hero />
+            <Method />
 
-            {healthState === "offline" ? <OfflineNotice /> : null}
+            <section id="analyze" className="chapter scroll-mt-14" aria-labelledby="analyze-title">
+              <div className="mx-auto grid max-w-[1280px] gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] lg:gap-16 lg:px-8">
+                <div>
+                  <p className="eyebrow text-faint">Workspace</p>
+                  <h2 id="analyze-title" className="display mt-4 text-[36px] sm:text-[44px]">
+                    Analyze imagery
+                  </h2>
+                  <p className="mt-5 max-w-sm text-base leading-relaxed text-muted">
+                    Near-vertical aerial or drone photographs work best. Nothing is sent until
+                    you run the analysis, and nothing is stored.
+                  </p>
+                </div>
 
-            <div className="mt-8">
-              {stage === "idle" ? (
-                <UploadZone
-                  onSelect={handleSelect}
-                  maxSizeMb={maxFileSizeMb}
-                  disabled={healthState === "offline"}
-                />
-              ) : null}
+                <div className="min-w-0">
+                  {offline ? <OfflineNotice /> : null}
 
-              {stage === "ready" && file && previewUrl ? (
-                <ImagePreview
-                  file={file}
-                  previewUrl={previewUrl}
-                  dimensions={dimensions}
-                  onAnalyze={handleAnalyze}
-                  onReset={handleReset}
-                  disabled={healthState === "offline"}
-                />
-              ) : null}
+                  {stage === "idle" ? (
+                    <UploadZone onSelect={handleSelect} maxSizeMb={maxFileSizeMb} disabled={offline} />
+                  ) : null}
 
-              {stage === "analyzing" && previewUrl ? (
-                <AnalysisProgress previewUrl={previewUrl} />
-              ) : null}
+                  {stage === "ready" && file && previewUrl ? (
+                    <ImagePreview
+                      file={file}
+                      previewUrl={previewUrl}
+                      dimensions={dimensions}
+                      onAnalyze={handleAnalyze}
+                      onReset={handleReset}
+                      disabled={offline}
+                    />
+                  ) : null}
 
-              {stage === "error" && failure ? (
-                <ErrorState
-                  message={failure.message}
-                  code={failure.code}
-                  onRetry={handleReset}
-                />
-              ) : null}
-            </div>
+                  {stage === "analyzing" && previewUrl ? (
+                    <AnalysisProgress previewUrl={previewUrl} />
+                  ) : null}
 
-            {stage === "idle" ? (
-              <div className="mt-5">
-                <PipelineStrip />
+                  {stage === "error" && failure ? (
+                    <ErrorState message={failure.message} code={failure.code} onRetry={handleReset} />
+                  ) : null}
+                </div>
               </div>
-            ) : null}
+            </section>
 
-            <p className="mt-8 text-center text-[11px] leading-relaxed text-faint">
-              AASRA is an image-based decision-support prototype. Outputs are
-              candidate regions only and must be verified by trained personnel.
-            </p>
-          </div>
+            <ImageryBand />
+          </>
         )}
       </main>
+
+      <Footer />
     </>
-  );
-}
-
-function Intro() {
-  return (
-    <div className="anim-fade-up text-center">
-      <p className="text-xs font-medium uppercase tracking-[0.08em] text-faint">
-        Computer-vision decision support
-      </p>
-
-      <h1 className="mt-3 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-        Flood Imagery Analysis
-      </h1>
-
-      <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted">
-        Upload an aerial flood image to estimate water coverage and rank
-        potential relief zones, each with a candidate drop point.
-      </p>
-    </div>
   );
 }
 
 function OfflineNotice() {
   return (
-    <div className="anim-fade mt-8 rounded-lg border border-red-400/20 bg-red-400/[0.04] px-4 py-3.5 sm:px-5">
-      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-red-300">
-        Analysis service unreachable
-      </p>
-      <p className="mt-2 text-xs leading-relaxed text-muted">
-        The AASRA backend is not responding. Start it and this panel will clear
-        on its own — uploads stay disabled until it does.
+    <div
+      className="anim-fade mb-5 rounded-lg border border-warning/30 bg-warning/[0.06] px-5 py-4"
+      role="alert"
+      data-testid="offline-notice"
+    >
+      <p className="eyebrow text-warning">Analysis service unreachable</p>
+      <p className="mt-2 text-sm leading-relaxed text-muted">
+        The AASRA backend is not responding. Uploads stay disabled until it is back; this
+        notice clears on its own.
       </p>
     </div>
   );

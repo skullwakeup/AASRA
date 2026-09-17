@@ -4,6 +4,20 @@ All distances and areas below are **pixels of the processed image** (longest
 edge resized to `MAX_IMAGE_DIMENSION`). They are never metres, and none of them
 encode safety.
 
+```
+IMAGE
+  -> 1 preprocessing
+  -> 2 water detection                 WaterMask
+  -> 3 water buffer + candidate mask   WaterBuffer, CandidateMask
+  -> 4 connected regions               max-clearance point, clearances, openness
+  -> 5 isolated land regions           (reported only; feeds nothing)
+  -> 6 zone scoring, top N
+  -> 7 probable storage zones          centre = max-clearance point, valid radius
+  -> 8 probable drop zones             sampled, filtered, scored, spaced
+  -> 9 visualisations
+IMAGE -> 10 supplementary object detection (independent branch)
+```
+
 ## 1. Preprocessing (`services/preprocessing.py`)
 
 - decode upload → BGR; reject unreadable data and images below
@@ -67,7 +81,10 @@ and the usual remedy (NDWI) needs a near-infrared band this pipeline does not
 have. Dark roofs and deep shadow can read as water; sun glint and whitecaps
 can read as land.
 
-## 3. Water buffer and candidate mask (`services/drop_zone_detection.py`)
+## 3. Water buffer and candidate mask (`services/candidate_mask.py`)
+
+(This module was called `drop_zone_detection.py` before the storage/drop-zone
+stage existed; it was renamed because it builds masks, not drop zones.)
 
 ```
 WaterBuffer   = dilate(WaterMask, radius = WATER_BUFFER_SIZE)   # pixels only
@@ -78,20 +95,22 @@ CandidateMask = NonWaterMask AND NOT WaterBuffer
 followed by an open+close with a 5×5 elliptical kernel. There is **no obstacle
 detection** yet — buildings, trees, vehicles and power lines are not modelled.
 
-## 4. Regions, drop points, openness (`services/region_analysis.py`)
+## 4. Regions, max-clearance point, openness (`services/region_analysis.py`)
 
 `cv2.connectedComponentsWithStats` on the candidate mask gives id, area, bbox,
 width, height and centroid. Regions below `MIN_REGION_AREA` are rejected.
 
 The candidate mask is zero-padded by one pixel before `cv2.distanceTransform`
 so the image border counts as a boundary. Within each region, the pixel of
-maximum distance is the **candidate drop point**; that distance is the region
-clearance. Regions whose clearance is below `MIN_REGION_CLEARANCE` are dropped
+maximum distance is the **max-clearance point** (returned as `drop_point` on
+each zone for backward compatibility, and used as the storage centre in §7);
+that distance is the region clearance. Regions whose clearance is below `MIN_REGION_CLEARANCE` are dropped
 as slivers.
 
 `water_clearance` is sampled separately from a distance transform of the
-inverted water mask: the pixel distance from the drop point to the nearest
-detected water pixel.
+inverted water mask: the pixel distance from that point to the nearest
+detected water pixel. With no water in the image the transform is capped at
+the image diagonal (OpenCV would otherwise report `FLT_MAX`).
 
 Openness (0–1), from three real geometric properties:
 
@@ -137,30 +156,149 @@ Bands: **80–100 HIGH POTENTIAL**, **60–79 MODERATE POTENTIAL**, **40–59 LO
 POTENTIAL**, **<40 NOT RECOMMENDED**. Zones are sorted by `final_score` and the
 top `MAX_ZONES` (default 3) are returned, renumbered 1..N.
 
-## 7. Visualisations (`services/visualization.py`)
+## 7. Probable storage zones (`services/storage_zones.py`)
 
-Five base64 PNGs, always returned: `original`, `water_mask`, `candidate_mask`,
-`isolated_regions`, `final_analysis`. `water_mask` fills the detected water
-over a dimmed greyscale copy of the scene, so the mask can be judged against
-what is actually in the image rather than read as a context-free binary map.
-`final_analysis` is deliberately the clean, at-a-glance result: the water
-tint, each **ranked** zone's boundary and label, and its drop-point marker —
-unranked candidate outlines and isolated-region boxes are left out, since
-they have their own dedicated views. `isolated_regions` is still produced and
-returned by the API for completeness, but the current frontend dashboard does
-not display it (see `frontend/README.md`). Every drawing happens on a copy of
-the resized image; the upload itself is never modified.
+Terminology used everywhere in the code, API and UI:
 
-## 8. Supplementary object detection (`services/ai_detection.py`)
+| Term | Meaning |
+|---|---|
+| **Probable storage zone** | circular candidate area around the storage centre |
+| **Storage centre** | the ranked zone's max-clearance point from §4, unchanged |
+| **Probable drop zone** | small circle inside the storage zone |
+| **Drop point** | the exact pixel at the centre of a drop zone |
 
-A sixth image, `ai_context`, is added to the response only when this stage
+For each ranked zone, with centre `(cx, cy)`:
+
+```
+component  = the candidate-mask component containing the centre
+prohibited = WaterBuffer                       # water dilated by WATER_BUFFER_SIZE
+valid      = component AND NOT prohibited
+
+d_invalid  = exact Euclidean distance to the nearest non-valid pixel
+             (searched in a window of half-size MAX + margin + 1)
+d_border   = min(cx, cy, W-1-cx, H-1-cy) + 1   # first pixel outside the image
+d_limit    = min(d_invalid, d_border)
+
+r_geo      = ceil(d_limit) - 1                 # largest integer r < d_limit
+radius     = min(r_geo - STORAGE_RADIUS_MARGIN_PX, MAX_STORAGE_RADIUS_PX)
+```
+
+Then every pixel centre with `(x-cx)² + (y-cy)² ≤ radius²` is checked against
+`valid` and the image bounds, and `radius` is decreased until that holds.
+(With the formula above it already holds; the check guards against future
+changes.)
+
+- The candidate mask is defined as "not buffer", but its morphological close
+  can re-add a few buffer pixels, so both `component` and `prohibited` are
+  checked explicitly.
+- Bounding the circle by the zone's **own component** means it can never
+  cross water, the buffer or the image edge, or spill onto unrelated land.
+- `limiting_factor` records what stopped the circle: `water_buffer` (the
+  nearest invalid pixel is water or buffer), `candidate_boundary` (land
+  removed by the candidate-mask cleanup, or another region),
+  `image_boundary`, or `max_radius`. `limiting_point` is that pixel.
+- `radius < MIN_STORAGE_RADIUS_PX` → the zone is listed in
+  `storage_analysis.not_viable` (`radius_below_minimum`) and not drawn as a
+  storage zone. A centre on an invalid pixel → `center_in_excluded_area`; a
+  repeated centre → `duplicate_center`. The radius is always a non-negative
+  integer.
+- `MAX_STORAGE_RADIUS_PX` stops a nearly water-free image from producing a
+  circle that describes the whole frame instead of a local area.
+
+Cost: one bounded window search and one disk check per zone — no
+O(W × H × r) scan.
+
+## 8. Probable drop zones (`services/storage_zones.py`)
+
+Let `ρ = DROP_POINT_MIN_CLEARANCE_PX` (drop-zone radius) and
+`s = max(MIN_DROP_POINT_DISTANCE_PX, 2ρ)` (spacing).
+
+**Sampling rings** (outermost first, none closer than `s` to the centre):
+
+1. `radius − 1` — just inside the boundary. Where the boundary is tight,
+   these samples have about `margin` px of clearance and are rejected; they
+   are the red crosses in the Drop Zones view.
+2. `radius + margin − ρ` — the farthest ring on which every sample has
+   at least `ρ` px of valid land (the nearest invalid pixel is at least
+   `radius + margin + 1` from the centre; one pixel is kept for rounding).
+3. every `s` inward from ring 2.
+
+A ring of radius `r` gets `max(6, ⌊2πr / s⌋)` samples; alternate rings are
+offset by half a step. Samples are rounded to pixels and de-duplicated.
+
+**Filters**, in order (the first that fails is recorded as the reason):
+`outside_image`, `outside_storage_zone`, `water`, `water_buffer`,
+`outside_candidate_region`, `insufficient_clearance` (clearance < ρ, where
+clearance comes from an exact, border-padded distance transform of `valid`).
+
+**Score** (0–100, separate from the zone score in §6):
+
+```
+clearance_score = min(1, clearance_px / radius)
+water_score     = min(1, water_clearance_px / CLEARANCE_SCORE_SATURATION_PX)
+proximity_score = 1 - distance_from_centre_px / radius
+
+score = 100 * (0.40*clearance_score + 0.30*water_score + 0.30*proximity_score)
+```
+
+The bands from §6 are applied to it (`HIGH POTENTIAL` …).
+
+**Selection:** candidates sorted by score (ties: outer ring order, then
+angle) are accepted greedily when they are at least `s` px from the centre
+and from every accepted point, up to `MAX_DROP_POINTS_PER_STORAGE_ZONE`.
+Accepted points are numbered 1..n in score order. Because `s ≥ 2ρ`, drop
+zones never overlap.
+
+A storage zone can legitimately have no drop zones: when `radius − 1 < s`
+there is no ring at all, and on a small round island every boundary sample
+fails the clearance test while ring 2 is closer than `s` to the
+centre. The UI states which of the two happened.
+
+Settings (all in `config.py`):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `STORAGE_RADIUS_MARGIN_PX` | 4 | pixel gap kept from the nearest excluded pixel |
+| `MIN_STORAGE_RADIUS_PX` | 12 | smaller circles are reported as not viable |
+| `MAX_STORAGE_RADIUS_PX` | 180 | cap on the storage radius |
+| `DROP_POINT_MIN_CLEARANCE_PX` | 10 | drop-zone radius and minimum clearance |
+| `MIN_DROP_POINT_DISTANCE_PX` | 28 | spacing between drop points, and from the centre |
+| `MAX_DROP_POINTS_PER_STORAGE_ZONE` | 8 | cap per storage zone |
+| `DROP_SCORE_WEIGHT_*` | 0.40 / 0.30 / 0.30 | clearance / water clearance / proximity |
+
+"Margin" and "clearance" are pixel distances used by the algorithm, not
+physical safety distances.
+
+## 9. Visualisations (`services/visualization.py`)
+
+Six base64 PNGs, always returned, all on the processed image's pixel grid:
+
+| Key | Content |
+|---|---|
+| `original` | the resized upload |
+| `water_mask` | detected water over a dimmed greyscale copy of the scene |
+| `candidate_mask` | binary candidate mask |
+| `drop_zones` | water, water buffer, ranked regions, each storage circle, its radius line to the limiting pixel (red dot) labelled `r = N px`, sampling rings, rejected samples (red crosses), numbered drop zones `D1…`, and a note for each not-viable zone |
+| `isolated_regions` | potentially isolated land regions, outlined and scored |
+| `final_analysis` | water tint, ranked region outlines, storage circles (translucent green), drop zones (small light rings with a dot), storage centres (green core, white ring) and one label per storage zone |
+
+Labels are tried above and below their anchor, then shifted sideways; the
+position with the least overlap with labels, circles and the disclaimer strip
+already on the image wins. Every drawing happens on a copy of the resized
+image; the upload itself is never modified.
+
+## 10. Supplementary object detection (`services/ai_detection.py`)
+
+A seventh image, `ai_context`, is added to the response only when this stage
 succeeds. It is produced by a small, separate module that is **not part of**
 the pipeline above:
 
-- Model: Ultralytics **YOLO11n**, pretrained on COCO (80 general object
-  classes). Loaded lazily on first use and cached for the life of the
-  process; the ~5.6 MB weight file is downloaded once to
-  `backend/app/services/weights/` and reused after that.
+- Model: **YOLO11n**, pretrained on COCO (80 general object classes), run
+  through **ONNX Runtime (CPU)** from the committed
+  `backend/app/services/weights/yolo11n.onnx` (~10 MB). Nothing is
+  downloaded at runtime. The session is created on first use and cached for
+  the life of the process. Letterboxing, output decoding and per-class NMS
+  are implemented in the module.
 - Runs once per request on the same resized (`display_bgr`) image the OpenCV
   stages use, with a fixed confidence threshold
   (`MIN_DETECTION_CONFIDENCE = 0.25`).
@@ -170,12 +308,12 @@ the pipeline above:
 - Output: a list of detections (label, confidence, pixel bounding box), a
   per-class count, and an annotated image with clean bounding boxes and
   `Label NN%` tags — no dimming, no tinting.
-- **Never influences** water detection, candidate regions, clearance, or zone
-  scoring/ranking in any way. It reads the processed image and writes only to
+- **Never influences** water detection, candidate regions, clearance, zone
+  scoring, storage zones or drop zones in any way. It reads the processed image and writes only to
   its own part of the response (`ai` and `images.ai_context`).
-- Fails safe: if `ultralytics` isn't installed, the weight download fails, or
-  inference raises for any reason, the function returns a failure result
-  instead of raising. The caller then reports `analysis_mode.ai = false` and
+- Fails safe: if `onnxruntime` isn't installed, the model file is missing,
+  `AI_ENABLED=false`, or inference raises for any reason, the function
+  returns a failure result instead of raising. The caller then reports `analysis_mode.ai = false` and
   every other field in the response is unaffected.
 
 ## Not implemented
@@ -183,5 +321,7 @@ the pipeline above:
 - Obstacle detection (buildings, trees, power lines) beyond what the water
   buffer implicitly avoids.
 - Georeferencing — pixel distances never convert to real-world distances.
+- Any check of what is physically inside a storage or drop zone (surface,
+  slope, obstacles, people).
 - Multi-image or temporal (before/after) analysis.
 - Any accuracy evaluation against a labelled flood-imagery dataset.

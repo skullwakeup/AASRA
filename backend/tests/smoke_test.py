@@ -112,6 +112,21 @@ def main() -> int:
             f"drop_point=({zone['drop_point']['x']}, {zone['drop_point']['y']}), "
             f"breakdown={zone['score_breakdown']}"
         )
+    print(f"Probable storage zones: {len(result['storage_zones'])}")
+    for storage in result["storage_zones"]:
+        drops = storage["candidate_drop_zones"]
+        print(
+            f"  Storage {storage['id']}: centre=({storage['center']['x']}, "
+            f"{storage['center']['y']}), radius={storage['radius_px']}px "
+            f"(limited by {storage['limiting_factor']}), drop zones={len(drops)}"
+        )
+        for drop in drops:
+            print(
+                f"    D{drop['id']}: ({drop['point']['x']}, {drop['point']['y']}) "
+                f"score={drop['score']} clearance={drop['clearance_px']}px"
+            )
+    for item in result["storage_analysis"]["not_viable"]:
+        print(f"  Zone {item['zone_id']}: no storage zone ({item['reason']}, radius {item['radius_px']}px)")
     print(f"Potentially isolated land regions: {len(result['isolated_regions'])}")
     for region in result["isolated_regions"]:
         print(

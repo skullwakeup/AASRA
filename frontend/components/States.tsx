@@ -1,8 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Panel } from "@/components/Panel";
+import { pillPrimary } from "@/lib/ui";
 
 /**
  * Failure surface. The message shown is either the backend's own clean
@@ -19,54 +18,44 @@ export function ErrorState({
   onRetry: () => void;
 }) {
   return (
-    <Panel className="anim-fade-up overflow-hidden border-red-400/20">
-      <div className="flex flex-col items-center px-6 py-12 text-center sm:py-16">
-        <div className="grid size-12 place-items-center rounded-md border border-red-400/25 bg-red-400/10">
-          <AlertTriangle className="size-5 text-red-300" strokeWidth={1.75} />
-        </div>
-
-        <h3 className="mt-6 font-mono text-[13px] uppercase tracking-[0.2em] text-ink">
-          Analysis could not be completed
-        </h3>
-
-        <p className="mt-3 max-w-md text-sm leading-relaxed text-muted">
-          {message}
-        </p>
-
-        {code ? (
-          <span className="mt-4 rounded border border-line bg-raised px-2 py-1 font-mono text-[10px] tracking-[0.14em] text-faint">
-            {code}
-          </span>
-        ) : null}
-
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-8 inline-flex items-center gap-2 rounded border border-line-strong bg-raised px-5 py-2.5 font-mono text-[11px] uppercase tracking-[0.16em] text-ink transition-colors duration-150 hover:border-water/50 hover:bg-water/10 hover:text-water"
-        >
-          <RotateCcw className="size-3.5" strokeWidth={2} />
-          Try another image
-        </button>
-      </div>
+    <Panel className="anim-fade-up border-warning/30 p-6 sm:p-8" role="alert">
+      <p className="eyebrow text-warning">Analysis could not be completed</p>
+      <p className="mt-3 max-w-xl text-lg font-light leading-relaxed text-ink">
+        {message}
+      </p>
+      {code ? (
+        <p className="mt-3 font-mono text-xs text-faint">Code: {code}</p>
+      ) : null}
+      <button type="button" onClick={onRetry} className={`${pillPrimary} mt-7`}>
+        Try another image
+      </button>
     </Panel>
   );
 }
 
-/** Polished placeholder for a section the backend returned nothing for. */
+/** Placeholder for a section the backend returned nothing for. */
 export function EmptyState({
   title,
   description,
-  icon,
+  tone = "dark",
 }: {
   title: string;
   description: string;
-  icon?: ReactNode;
+  tone?: "dark" | "light";
 }) {
+  const light = tone === "light";
   return (
-    <div className="flex flex-col items-center rounded-lg border border-dashed border-line-strong px-6 py-10 text-center">
-      {icon ? <span className="mb-3 text-faint">{icon}</span> : null}
-      <h3 className="text-sm font-medium text-ink">{title}</h3>
-      <p className="mt-1.5 max-w-md text-sm leading-relaxed text-muted">
+    <div
+      className={`rounded-lg border border-dashed px-6 py-10 text-center ${
+        light ? "border-paper-ink/20" : "border-line-strong"
+      }`}
+    >
+      <p className={`text-lg ${light ? "text-paper-ink" : "text-ink"}`}>{title}</p>
+      <p
+        className={`mx-auto mt-2 max-w-lg text-sm leading-relaxed ${
+          light ? "text-paper-muted" : "text-muted"
+        }`}
+      >
         {description}
       </p>
     </div>

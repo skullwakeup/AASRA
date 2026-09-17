@@ -145,5 +145,15 @@ export async function analyzeImage(
     );
   }
 
+  // A backend older than the storage/drop-zone release omits these fields;
+  // fail with a clear message instead of rendering a broken dashboard.
+  if (!Array.isArray(payload.storage_zones) || !payload.parameters?.storage) {
+    throw new AasraApiError(
+      "The analysis service is running an older version. Update the backend, then try again.",
+      "INCOMPATIBLE_BACKEND",
+      response.status,
+    );
+  }
+
   return payload;
 }

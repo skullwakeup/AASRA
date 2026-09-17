@@ -1,29 +1,50 @@
 @import "tailwindcss";
 
 /* ==========================================================================
-   AASRA — design tokens
-   A calm, neutral dark palette: one blue for water, and three semantic
-   bands (green / amber / orange) used only for zone potential levels.
+   AASRA — design tokens (see docs/design.md)
+
+   Two canvases alternate down the page: a near-black canvas for imagery and
+   analysis, and an off-white canvas for explanation and results. Colour is
+   reserved for meaning:
+     water   — detected water, and nothing else
+     signal  — probable storage zones and high-potential results
+     caution — moderate results
+     warning — errors and not-viable results only
    ========================================================================== */
 
 :root {
   color-scheme: dark;
 
-  --ground: #070a0e; /* page */
-  --surface: #0c1117; /* panels */
-  --surface-raised: #111823; /* controls on panels */
-  --line: #1b2532; /* hairline borders */
-  --line-strong: #273343;
+  /* dark canvas */
+  --canvas: #050607;
+  --surface: #0e1012;
+  --surface-raised: #16181b;
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.2);
+  --text: #f2f1ed;
+  --text-muted: rgba(242, 241, 237, 0.68);
+  --text-faint: rgba(242, 241, 237, 0.46);
 
-  --text: #e7eef6;
-  --text-muted: #8a99ab;
-  --text-faint: #5b6878;
+  /* light canvas */
+  --paper: #f3f2ee;
+  --paper-card: #ffffff;
+  --paper-line: #deddd6;
+  --paper-text: #0b0c0d;
+  --paper-muted: rgba(11, 12, 13, 0.64);
+  --paper-faint: rgba(11, 12, 13, 0.46);
 
-  --water: #2ea8f0;
+  /* meaning */
+  --water: #3a8ee6;
+  --signal: #34d378;
+  --signal-ink: #0f7a3f; /* signal green legible on the light canvas */
+  --caution: #e0b24f;
+  --caution-ink: #8a6210;
+  --warning: #ef5a5f;
+  --warning-ink: #b3262b;
 }
 
 @theme inline {
-  --color-ground: var(--ground);
+  --color-canvas: var(--canvas);
   --color-surface: var(--surface);
   --color-raised: var(--surface-raised);
   --color-line: var(--line);
@@ -31,27 +52,72 @@
   --color-ink: var(--text);
   --color-muted: var(--text-muted);
   --color-faint: var(--text-faint);
+
+  --color-paper: var(--paper);
+  --color-paper-card: var(--paper-card);
+  --color-paper-line: var(--paper-line);
+  --color-paper-ink: var(--paper-text);
+  --color-paper-muted: var(--paper-muted);
+  --color-paper-faint: var(--paper-faint);
+
   --color-water: var(--water);
+  --color-signal: var(--signal);
+  --color-signal-ink: var(--signal-ink);
+  --color-caution: var(--caution);
+  --color-caution-ink: var(--caution-ink);
+  --color-warning: var(--warning);
+  --color-warning-ink: var(--warning-ink);
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 html {
-  background: var(--ground);
+  background: var(--canvas);
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--ground);
+  background: var(--canvas);
   color: var(--text);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Plain, neutral backdrop behind visualisation images so letterboxing reads
-   as intentional empty canvas. */
+/* Display type: light weight, slightly tight — the editorial voice. */
+.display {
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+}
+
+/* Small uppercase label above headings and values. */
+.eyebrow {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Shared chapter rhythm: 48 / 64 / 96 px. */
+.chapter {
+  padding-block: 48px;
+}
+@media (min-width: 640px) {
+  .chapter {
+    padding-block: 64px;
+  }
+}
+@media (min-width: 1024px) {
+  .chapter {
+    padding-block: 96px;
+  }
+}
+
+/* Neutral backdrop behind visualisation images so letterboxing reads as
+   intentional empty canvas. */
 .viewer-canvas {
-  background-color: #05080c;
+  background-color: #020303;
 }
 
 /* ---------------------------------------------------------------- motion --
@@ -61,7 +127,7 @@ body {
 @keyframes aasra-fade-up {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -97,7 +163,7 @@ body {
 }
 
 .anim-fade-up {
-  animation: aasra-fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: aasra-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .anim-fade {
@@ -113,6 +179,9 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   .anim-fade-up,
   .anim-fade,
   .anim-sweep,
@@ -121,18 +190,16 @@ body {
   }
 }
 
-/* Focus ring consistent with the palette. */
+/* Focus ring: visible on both canvases. */
 :where(button, a, [tabindex]):focus-visible {
-  outline: 2px solid rgba(46, 168, 240, 0.65);
+  outline: 2px solid var(--water);
   outline-offset: 2px;
-  border-radius: 2px;
 }
 
 ::selection {
-  background: rgba(46, 168, 240, 0.28);
+  background: rgba(58, 142, 230, 0.3);
 }
 
-/* Thin scrollbars inside panels. */
 .thin-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;

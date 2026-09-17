@@ -12,9 +12,11 @@ computer-vision pipeline can be exercised without starting a web server:
       -> CANDIDATE MASK
       -> CONNECTED COMPONENTS
       -> DISTANCE TRANSFORM
-      -> DROP POINTS
+      -> MAX-CLEARANCE POINT
       -> ZONE SCORING
       -> TOP N ZONES
+      -> PROBABLE STORAGE ZONES   (centre = max-clearance point, valid radius)
+      -> PROBABLE DROP ZONES      (sampled, filtered, scored inside each)
 
 Every number in the response is derived from the uploaded image. Nothing is
 fabricated, defaulted or randomised.
@@ -29,11 +31,12 @@ import numpy as np
 from . import config
 from .services import (
     ai_detection,
-    drop_zone_detection,
+    candidate_mask,
     isolated_regions,
     preprocessing,
     region_analysis,
     scoring,
+    storage_zones,
     visualization,
     water_detection,
 )
@@ -55,7 +58,7 @@ def run_analysis(image_bytes: bytes, include_images: bool = True) -> Dict[str, A
     water = water_detection.detect_water(prepared.analysis_bgr)
 
     # -- Phases 4 & 5: buffer + candidate mask ------------------------------
-    masks = drop_zone_detection.build_candidate_mask(water.mask)
+    masks = candidate_mask.build_candidate_mask(water.mask)
 
     # -- Phases 6, 7, 8: components, distance transform, openness ----------
     regions = region_analysis.analyse_candidate_regions(
@@ -70,32 +73,38 @@ def run_analysis(image_bytes: bytes, include_images: bool = True) -> Dict[str, A
     # -- Phases 10 & 11: scoring and ranking -------------------------------
     zones = scoring.rank_zones(regions, image_area=image_area)
 
+    # -- Phase 11b: probable storage zones and probable drop zones ----------
+    # Reuses the same water mask, water buffer and candidate mask; each
+    # storage centre is the ranked zone's existing max-clearance point.
+    storage = storage_zones.analyse_storage_zones(
+        zones=zones,
+        candidate_mask=masks.candidate_mask,
+        water_mask=water.mask,
+        prohibited_mask=masks.water_buffer_mask,
+        water_distance=region_analysis.water_distance_map(water.mask),
+    )
+    zones_by_id = {zone.zone_id: zone for zone in zones}
+    drop_zone_count = sum(len(s.drop_zones) for s in storage.storage_zones)
+
     # -- Phase 12: visualisations ------------------------------------------
     want_images = include_images and config.INCLUDE_IMAGES
     if want_images:
         images = visualization.build_visualizations(
             display_bgr=prepared.display_bgr,
             water_mask=water.mask,
+            buffer_mask=masks.water_buffer_mask,
             candidate_mask=masks.candidate_mask,
             zones=zones,
+            storage=storage,
             isolated=isolated,
         )
     else:
-        images = {
-            key: ""
-            for key in (
-                "original",
-                "water_mask",
-                "candidate_mask",
-                "isolated_regions",
-                "final_analysis",
-            )
-        }
+        images = {key: "" for key in visualization.IMAGE_KEYS}
 
     # -- Optional AI supplement: supplementary object detection context -----
     # Independent of, and never fused into, the OpenCV pipeline above. This
-    # never raises — on any failure (missing dependencies, no internet for
-    # the first weight download, model/inference error) it degrades to
+    # never raises — on any failure (onnxruntime missing, model file missing
+    # or unreadable, inference error, out of memory) it degrades to
     # analysis_mode.ai = False and the OpenCV results are unaffected.
     ai_result = ai_detection.get_object_context(
         prepared.display_bgr, build_visualization=want_images
@@ -114,6 +123,11 @@ def run_analysis(image_bytes: bytes, include_images: bool = True) -> Dict[str, A
         warnings.append(
             "No valid candidate zones were found (regions were too small, too "
             "narrow, or entirely inside the water buffer)."
+        )
+    if zones and not storage.storage_zones:
+        warnings.append(
+            "Candidate zones were found, but none had enough clearance for a "
+            f"probable storage zone (minimum radius {config.MIN_STORAGE_RADIUS_PX} px)."
         )
     if not isolated:
         warnings.append("No potentially isolated land regions were detected.")
@@ -134,6 +148,22 @@ def run_analysis(image_bytes: bytes, include_images: bool = True) -> Dict[str, A
             "min_region_area_px": config.MIN_REGION_AREA,
             "min_isolated_area_px": config.MIN_ISOLATED_AREA,
             "max_zones": config.MAX_ZONES,
+            "storage": {
+                "radius_margin_px": config.STORAGE_RADIUS_MARGIN_PX,
+                "min_radius_px": config.MIN_STORAGE_RADIUS_PX,
+                "max_radius_px": config.MAX_STORAGE_RADIUS_PX,
+                "drop_zone_radius_px": config.DROP_POINT_MIN_CLEARANCE_PX,
+                "min_drop_point_distance_px": max(
+                    config.MIN_DROP_POINT_DISTANCE_PX,
+                    2 * config.DROP_POINT_MIN_CLEARANCE_PX,
+                ),
+                "max_drop_points_per_storage_zone": config.MAX_DROP_POINTS_PER_STORAGE_ZONE,
+                "drop_score_weights": {
+                    "clearance": config.DROP_SCORE_WEIGHT_CLEARANCE,
+                    "water_clearance": config.DROP_SCORE_WEIGHT_WATER_CLEARANCE,
+                    "proximity": config.DROP_SCORE_WEIGHT_PROXIMITY,
+                },
+            },
             "score_weights": {
                 "area": config.SCORE_WEIGHT_AREA,
                 "water_clearance": config.SCORE_WEIGHT_WATER_CLEARANCE,
@@ -145,6 +175,8 @@ def run_analysis(image_bytes: bytes, include_images: bool = True) -> Dict[str, A
             "non_water_percentage": non_water_percentage,
             "candidate_regions": len(regions),
             "isolated_regions": len(isolated),
+            "storage_zones": len(storage.storage_zones),
+            "drop_zones": drop_zone_count,
             "candidate_area_percentage": round(
                 100.0 * masks.candidate_pixels / float(image_area), 2
             ),
@@ -176,6 +208,18 @@ def run_analysis(image_bytes: bytes, include_images: bool = True) -> Dict[str, A
             }
             for zone in zones
         ],
+        "storage_zones": [
+            storage_zones.storage_to_dict(s, zones_by_id[s.zone_id])
+            for s in storage.storage_zones
+        ],
+        "storage_analysis": {
+            "evaluated": len(zones),
+            "viable": len(storage.storage_zones),
+            "not_viable": [
+                {"zone_id": item.zone_id, "reason": item.reason, "radius_px": item.radius_px}
+                for item in storage.not_viable
+            ],
+        },
         "isolated_regions": [
             {
                 "id": region.region_id,
@@ -203,8 +247,9 @@ def run_analysis(image_bytes: bytes, include_images: bool = True) -> Dict[str, A
         "warnings": warnings,
         "images": images,
         "notice": (
-            "Decision-support prototype. Outputs are candidate regions derived "
-            "from image heuristics only and must be verified by trained "
-            "personnel. No safety, landing or rescue claim is made."
+            "Computer-vision decision-support prototype. Storage and drop zones "
+            "are probable locations derived from image geometry only, in image "
+            "pixels, and must be verified by trained personnel on the ground. "
+            "No safety, landing, access or rescue claim is made."
         ),
     }

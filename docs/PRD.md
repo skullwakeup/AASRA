@@ -5,8 +5,10 @@
 AASRA (AI-Assisted Relief Area Identification) is an image-based
 decision-support prototype. A user uploads a single aerial or drone
 photograph of a flooded area; the system estimates water coverage, ranks
-candidate relief zones on dry land, and optionally reports visible people and
-vehicles as supplementary context. It is a college/portfolio project
+candidate land regions, computes a **probable storage zone** around each
+top region's highest-clearance point and **probable drop zones** inside it,
+and optionally reports visible people and vehicles as supplementary
+context. It is a college/portfolio project
 demonstrating a computer-vision pipeline, not a production emergency-response
 tool.
 
@@ -36,7 +38,10 @@ check first.
   vision (no training data required).
 - Identify and rank candidate relief zones on dry land, each with a
   transparent, inspectable score.
-- Produce a clear drop point for each ranked zone.
+- For each ranked zone, compute a probable storage zone (the largest valid
+  circle around its highest-clearance point) and a small set of spaced,
+  scored probable drop zones inside it, with the reason for each choice
+  visible in the interface.
 - Provide human-readable visualizations of every stage, not just a final
   number.
 - Add a small, genuinely supplementary object-detection pass (YOLO11n) that
@@ -68,16 +73,21 @@ check first.
 4. Per-region clearance (from water, and internally) via distance transform.
 5. Transparent 0–100 relief-zone scoring and ranking, with the weighted
    formula exposed in the API response.
-6. Candidate drop-point generation for each ranked zone.
-7. Potentially-isolated-land-region detection (computed and returned by the
-   API; not currently surfaced in the dashboard UI).
-8. A multi-tab visualization viewer (Original, Water Analysis, Candidate
-   Areas, Final Result, and AI Context when available).
-9. Supplementary YOLO11n object detection for seven classes (person, car,
+6. Probable storage zone per ranked zone: centre, verified pixel radius,
+   limiting factor and limiting pixel.
+7. Probable drop zones per storage zone: ring sampling, clearance filter,
+   transparent 0–100 spatial score, minimum spacing, maximum count; rejected
+   samples are reported with a reason.
+8. Potentially isolated land regions (API and a Land Isolation view).
+9. A multi-tab visualization viewer (Original, Water Analysis, Candidate
+   Areas, Drop Zones, Land Isolation, Final Result, and AI Context when
+   available), with a highlight overlay linking cards to the image.
+10. Supplementary YOLO11n object detection for seven classes (person, car,
    truck, bus, boat, motorcycle, bicycle), with per-class counts and an
    annotated image.
-10. Graceful AI failure handling, reported honestly via `analysis_mode.ai`.
-11. A responsive results dashboard across desktop, tablet and mobile widths.
+11. Graceful AI failure handling, reported honestly via `analysis_mode.ai`.
+12. A responsive interface across desktop, tablet and mobile widths, with
+    two public-domain sample images for demonstration.
 
 ## 7. Functional requirements
 
@@ -88,9 +98,12 @@ check first.
 | FR-3 | The system shall exclude a configurable buffer distance around detected water from candidate land regions. |
 | FR-4 | The system shall reject candidate regions below a configurable minimum area or minimum internal clearance. |
 | FR-5 | The system shall compute a 0–100 score for each candidate region from area, water clearance and openness, using documented, fixed weights. |
-| FR-6 | The system shall return the top N ranked zones (configurable, default 3), each with its score, classification band, measurements and drop point. |
+| FR-6 | The system shall return the top N ranked zones (configurable, default 3), each with its score, classification band, measurements and max-clearance point. |
+| FR-6a | For each ranked zone the system shall return the largest integer radius around the zone's max-clearance point such that every pixel of the circle lies inside that zone's candidate region, outside the water buffer, and inside the image, less a configurable pixel margin and capped by a configurable maximum; radii below a configurable minimum shall be reported as not viable. |
+| FR-6b | Inside each storage zone the system shall return up to a configurable number of drop points, each with at least a configurable clearance of valid land, at least a configurable spacing from the centre and from each other, and a documented 0–100 score kept separate from the zone score. |
+| FR-6c | The system shall never describe any zone as safe, guaranteed or suitable for landing or rescue. |
 | FR-7 | The system shall attempt supplementary object detection on every request, and shall report success/failure honestly via `analysis_mode.ai` without ever raising an error that stops the primary analysis. |
-| FR-8 | Object-detection output shall never be written into, or read by, any water-detection, region-analysis or scoring computation. |
+| FR-8 | Object-detection output shall never be written into, or read by, any water-detection, region-analysis, scoring, storage-zone or drop-zone computation. |
 | FR-9 | The system shall return annotated PNG visualizations for each major stage of the analysis. |
 | FR-10 | The frontend shall render only values present in the backend response; it shall not fabricate, default, or hardcode any metric. |
 | FR-11 | Error responses shall never include a stack trace, file path, or internal exception detail. |
@@ -98,8 +111,9 @@ check first.
 ## 8. Non-functional requirements
 
 - **Reliability:** the optional AI component failing (missing dependency,
-  failed download, inference error) must never prevent the core OpenCV
-  pipeline from completing and returning a full result.
+  missing model file, inference error, disabled by `AI_ENABLED`) must never
+  prevent the core OpenCV pipeline from completing and returning a full
+  result.
 - **Performance:** a single-image analysis (OpenCV pipeline + YOLO11n
   inference) should complete in a few seconds on a typical CPU-only
   development machine, given the bounded processing resolution (1024px
@@ -108,8 +122,8 @@ check first.
   and water-detection heuristics is documented in `app/config.py` and
   `docs/pipeline.md` — none are opaque or learned.
 - **No external dependencies at request time:** no API keys, no third-party
-  network calls, no cloud services. The only network requirement is the
-  one-time YOLO11n weight download.
+  network calls, no cloud services, no model download (the ONNX model is
+  committed).
 - **Statelessness:** the backend holds no database and no session/user
   state; each request is analyzed independently.
 - **Honesty in UI/API:** status indicators (service health, AI status) must
@@ -125,9 +139,10 @@ User → Frontend (Next.js) → Backend API (FastAPI)
                     │                               │
         OpenCV pipeline (primary)        YOLO11n detection (supplementary)
         preprocessing → water detection  runs on the same processed image,
-        → region analysis → clearance    independently, in parallel
-        → zone scoring/ranking →                    │
-        visualization generation                    │
+        → region analysis → clearance    independently
+        → zone scoring/ranking                      │
+        → storage zones → drop zones                │
+        → visualization generation                  │
                     │                               │
                     └──────────────┬────────────────┘
                                    │
@@ -142,9 +157,9 @@ Mermaid diagram in the root `README.md` for the detailed per-stage view.
 
 ## 10. Technology stack
 
-- **Backend:** Python 3.13, FastAPI, OpenCV (`opencv-python`), NumPy,
-  Pillow. Supplementary AI: PyTorch (CPU), Torchvision (CPU), Ultralytics
-  (YOLO11n).
+- **Backend:** Python 3.13, FastAPI, OpenCV (`opencv-python-headless`),
+  NumPy, Pillow. Supplementary AI: ONNX Runtime (CPU) with a committed
+  YOLO11n ONNX model.
 - **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind
   CSS 4, `lucide-react` for icons.
 - **No database, no queue, no cache layer, no authentication.**
@@ -156,8 +171,11 @@ Mermaid diagram in the root `README.md` for the detailed per-stage view.
   earth vs. muddy water, dark roofs vs. shadowed water).
 - All measurements are in the processed image's pixel grid; there is no
   georeferencing or real-world unit conversion.
-- Zone scores are a ranking heuristic, not a validated safety or
-  landing-suitability metric.
+- Zone scores and drop-point scores are ranking heuristics, not validated
+  safety or landing-suitability metrics.
+- Storage and drop zones are measured in image pixels; their real size is
+  unknown without a ground scale, and nothing inside them (surface, slope,
+  obstacles, people) is assessed.
 - YOLO11n is trained on ordinary ground-level photography; its accuracy on
   aerial/top-down imagery is lower and unverified against any benchmark.
 - No labelled-dataset evaluation exists for either the water-detection

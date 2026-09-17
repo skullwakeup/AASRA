@@ -1,7 +1,8 @@
 /**
- * Maps the backend's classification strings onto UI colour tokens.
+ * Maps the backend's classification strings onto colour tokens.
  *
- * Zone bands come from services/scoring.py::classify_score
+ * Potential bands come from services/scoring.py::classify_score and are used
+ * by zones, storage zones and drop zones alike:
  *   HIGH POTENTIAL / MODERATE POTENTIAL / LOW POTENTIAL / NOT RECOMMENDED
  *
  * Isolation bands come from services/isolated_regions.py::classify_isolation
@@ -12,43 +13,18 @@
  */
 
 export interface Tone {
-  /** Text colour class. */
+  /** Text colour on the dark canvas. */
   text: string;
-  /** Badge background + border. */
-  badge: string;
+  /** Text colour on the light canvas. */
+  ink: string;
   /** Solid fill for bars and dots. */
   fill: string;
-  /** Faint surface wash for emphasised cards. */
-  wash: string;
 }
 
-const HIGH: Tone = {
-  text: "text-emerald-300",
-  badge: "bg-emerald-400/10 border-emerald-400/25 text-emerald-300",
-  fill: "bg-emerald-400",
-  wash: "bg-emerald-400/[0.04]",
-};
-
-const MODERATE: Tone = {
-  text: "text-amber-300",
-  badge: "bg-amber-400/10 border-amber-400/25 text-amber-300",
-  fill: "bg-amber-400",
-  wash: "bg-amber-400/[0.04]",
-};
-
-const LOW: Tone = {
-  text: "text-orange-300",
-  badge: "bg-orange-400/10 border-orange-400/25 text-orange-300",
-  fill: "bg-orange-400",
-  wash: "bg-orange-400/[0.04]",
-};
-
-const NEUTRAL: Tone = {
-  text: "text-slate-300",
-  badge: "bg-slate-400/10 border-slate-400/25 text-slate-300",
-  fill: "bg-slate-400",
-  wash: "bg-slate-400/[0.04]",
-};
+const HIGH: Tone = { text: "text-signal", ink: "text-signal-ink", fill: "bg-signal" };
+const MODERATE: Tone = { text: "text-caution", ink: "text-caution-ink", fill: "bg-caution" };
+const LOW: Tone = { text: "text-muted", ink: "text-paper-muted", fill: "bg-[#9a9a94]" };
+const NOT_RECOMMENDED: Tone = { text: "text-warning", ink: "text-warning-ink", fill: "bg-warning" };
 
 /** Works for both "… POTENTIAL" and "… ISOLATION" strings. */
 export function toneFor(classification: string): Tone {
@@ -56,5 +32,10 @@ export function toneFor(classification: string): Tone {
   if (value.startsWith("HIGH")) return HIGH;
   if (value.startsWith("MODERATE")) return MODERATE;
   if (value.startsWith("LOW")) return LOW;
-  return NEUTRAL; // NOT RECOMMENDED, or any future band.
+  return NOT_RECOMMENDED;
+}
+
+/** "HIGH POTENTIAL" -> "High Potential". */
+export function titleCase(value: string): string {
+  return value.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }

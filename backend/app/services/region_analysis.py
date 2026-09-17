@@ -3,8 +3,8 @@ Phases 6, 7 & 8 — connected component analysis, distance transform and opennes
 
 For every candidate region we compute:
   * region id, pixel area, bounding box (x, y, w, h), centroid
-  * the candidate drop point = the interior pixel with maximum clearance
-    (cv2.distanceTransform), i.e. the point furthest from anything excluded
+  * the max-clearance point = the interior pixel with maximum clearance
+    (cv2.distanceTransform); it becomes the storage centre in storage_zones.py
   * region clearance and water clearance, both in PIXELS of the processed image
   * an openness feature derived from real geometry (never a random value)
 
@@ -25,7 +25,7 @@ from .. import config
 
 @dataclass
 class CandidateRegion:
-    """One candidate supply-drop region."""
+    """One candidate land region."""
 
     region_id: int
     pixel_area: int
@@ -38,7 +38,7 @@ class CandidateRegion:
     drop_x: int
     drop_y: int
     region_clearance_px: float  # clearance inside the candidate mask
-    water_clearance_px: float  # distance from drop point to nearest water pixel
+    water_clearance_px: float  # distance from that point to nearest water pixel
     openness: float  # 0..1, see _compute_openness
     compactness: float  # 4*pi*A / P^2
     extent: float  # area / bounding-box area
@@ -61,9 +61,15 @@ def water_distance_map(water_mask: np.ndarray) -> np.ndarray:
 
     Computed as the distance transform of the inverted water mask. Pixels that
     are themselves water get 0.
+
+    With no water pixels at all, OpenCV reports FLT_MAX everywhere; that is
+    capped at the image diagonal (no water anywhere in the frame) so the value
+    stays a finite, displayable pixel distance.
     """
     inverted = cv2.bitwise_not(water_mask)
-    return cv2.distanceTransform(inverted, cv2.DIST_L2, 5)
+    distance = cv2.distanceTransform(inverted, cv2.DIST_L2, 5)
+    diagonal = float(np.hypot(*water_mask.shape[:2]))
+    return np.minimum(distance, diagonal)
 
 
 def _compute_openness(

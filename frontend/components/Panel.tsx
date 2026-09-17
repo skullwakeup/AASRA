@@ -1,59 +1,58 @@
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 
-/** Flat, hairline-bordered surface. No shadows, no blur, minimal rounding. */
+/** Flat, hairline-bordered 8px card. No shadows, no blur. */
 export function Panel({
   children,
   className = "",
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+  tone = "dark",
+  ...rest
+}: HTMLAttributes<HTMLElement> & { tone?: "dark" | "light" }) {
+  const surface =
+    tone === "light"
+      ? "border-paper-line bg-paper-card text-paper-ink"
+      : "border-line bg-surface";
   return (
-    <section className={`rounded-lg border border-line bg-surface ${className}`}>
+    <section className={`rounded-lg border ${surface} ${className}`} {...rest}>
       {children}
     </section>
   );
 }
 
-/** Panel header bar: a title on the left, optional meta on the right. */
-export function PanelHeader({
-  title,
-  meta,
-}: {
-  title: string;
-  meta?: ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-line px-4 py-3 sm:px-5">
-      <h2 className="truncate text-sm font-medium text-ink">{title}</h2>
-      {meta ? <div className="shrink-0">{meta}</div> : null}
-    </div>
-  );
-}
-
-/** Heading that opens each block of the results page. */
+/** Heading that opens each chapter of the results page. */
 export function SectionHeading({
+  eyebrow,
   title,
-  count,
   description,
+  aside,
+  tone = "dark",
 }: {
+  eyebrow?: string;
   title: string;
-  count?: string;
-  description?: string;
+  description?: ReactNode;
+  aside?: ReactNode;
+  tone?: "dark" | "light";
 }) {
+  const light = tone === "light";
   return (
-    <div className="mb-4">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="text-base font-semibold text-ink">{title}</h2>
-        {count ? (
-          <span className="text-sm text-faint tabular-nums">{count}</span>
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+      <div className="min-w-0 max-w-3xl">
+        {eyebrow ? (
+          <p className={`eyebrow ${light ? "text-paper-faint" : "text-faint"}`}>{eyebrow}</p>
+        ) : null}
+        <h2 className={`display mt-3 text-[30px] sm:text-[38px] ${light ? "text-paper-ink" : "text-ink"}`}>
+          {title}
+        </h2>
+        {description ? (
+          <p
+            className={`mt-3 text-base leading-relaxed ${
+              light ? "text-paper-muted" : "text-muted"
+            }`}
+          >
+            {description}
+          </p>
         ) : null}
       </div>
-      {description ? (
-        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted">
-          {description}
-        </p>
-      ) : null}
+      {aside ? <div className="shrink-0">{aside}</div> : null}
     </div>
   );
 }

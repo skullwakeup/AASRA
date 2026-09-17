@@ -190,7 +190,7 @@ MIN_WATER_COMPONENT_AREA = 400
 MAX_WATER_HOLE_AREA = 300
 
 # ---------------------------------------------------------------------------
-# Water safety buffer (Phase 4)
+# Water buffer (Phase 4)
 # ---------------------------------------------------------------------------
 
 #: Dilation radius (px) applied to the water mask to create spatial clearance
@@ -248,6 +248,41 @@ OPENNESS_WEIGHT_EXTENT = 0.20
 SCORE_HIGH_MIN = 80
 SCORE_MODERATE_MIN = 60
 SCORE_LOW_MIN = 40
+
+# ---------------------------------------------------------------------------
+# Probable storage zones and probable drop zones (services/storage_zones.py)
+# ---------------------------------------------------------------------------
+# A storage zone is the largest circle around a ranked zone's existing
+# max-clearance point that stays inside that candidate region and outside the
+# water buffer. Drop zones are smaller circles sampled inside it. Every value
+# is in PIXELS of the processed image; "margin" and "clearance" here are
+# computational exclusion distances, not physical safety distances.
+
+#: Pixels subtracted from the largest geometrically valid radius, so the
+#: storage boundary never sits directly on an excluded pixel.
+STORAGE_RADIUS_MARGIN_PX = 4
+#: A storage zone whose final radius is below this is reported as not viable.
+MIN_STORAGE_RADIUS_PX = 12
+#: Upper bound on the storage radius. Without it an image with little water
+#: would yield a circle spanning most of the frame, which describes the frame
+#: rather than a local operating area. Tuned for MAX_IMAGE_DIMENSION = 1024.
+MAX_STORAGE_RADIUS_PX = 180
+
+#: Radius of each drop zone: every pixel within this distance of a drop point
+#: must be candidate land. Points with less clearance are rejected.
+DROP_POINT_MIN_CLEARANCE_PX = 10
+#: Minimum spacing between two drop points, and between a drop point and the
+#: storage centre. Also the spacing of the sampling rings. Must be at least
+#: 2 * DROP_POINT_MIN_CLEARANCE_PX so drop zones never overlap.
+MIN_DROP_POINT_DISTANCE_PX = 28
+#: Maximum number of drop zones reported per storage zone.
+MAX_DROP_POINTS_PER_STORAGE_ZONE = 8
+
+#: Drop-point spatial score weights (must sum to 1.0). This is a separate
+#: score from the zone score above — see storage_zones.py.
+DROP_SCORE_WEIGHT_CLEARANCE = 0.40
+DROP_SCORE_WEIGHT_WATER_CLEARANCE = 0.30
+DROP_SCORE_WEIGHT_PROXIMITY = 0.30
 
 # ---------------------------------------------------------------------------
 # Output

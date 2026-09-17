@@ -1,9 +1,9 @@
 """
-Phases 4 & 5 — water safety buffer and candidate region mask.
+Phases 4 & 5 — water buffer and candidate region mask.
 
     WATER MASK
       -> MORPHOLOGICAL DILATION  (radius = WATER_BUFFER_SIZE)
-      -> WATER SAFETY BUFFER
+      -> WATER BUFFER
 
     NonWaterMask  = NOT WaterMask
     CandidateMask = NonWaterMask AND NOT WaterBuffer

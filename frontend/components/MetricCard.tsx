@@ -6,42 +6,40 @@ export function MetricCard({
   label,
   value,
   caption,
-  accent = "neutral",
+  accent,
   bar,
+  testId,
+  className = "",
 }: {
   label: string;
   value: string;
   caption: string;
-  accent?: "water" | "neutral";
+  accent?: "water" | "signal";
   /** 0-100. Only pass when the metric genuinely is a proportion. */
   bar?: number;
+  testId?: string;
+  className?: string;
 }) {
-  const fill = accent === "water" ? "bg-water" : "bg-slate-500";
-
+  const valueColor =
+    accent === "signal" ? "text-signal" : accent === "water" ? "text-water" : "text-ink";
   return (
-    <div className="rounded-lg border border-line bg-surface p-4 sm:p-5">
+    <div className={`bg-surface p-4 sm:p-5 ${className}`}>
       <p className="text-sm text-muted">{label}</p>
-
-      <p className="mt-2 font-mono text-[28px] font-medium leading-none tracking-tight text-ink tabular-nums">
+      <p
+        className={`display mt-3 text-[40px] tabular-nums ${valueColor}`}
+        data-testid={testId}
+      >
         {value}
       </p>
-
       {typeof bar === "number" ? (
-        <div className="mt-4 h-1 w-full overflow-hidden rounded-full bg-line">
+        <div className="mt-3 h-[2px] w-full overflow-hidden rounded-full bg-line">
           <div
-            className={`h-full rounded-full ${fill}`}
+            className={`h-full rounded-full ${accent === "water" ? "bg-water" : "bg-ink/50"}`}
             style={{ width: `${Math.max(0, Math.min(100, bar))}%` }}
           />
         </div>
       ) : null}
-
-      <p
-        className={`text-xs leading-relaxed text-faint ${
-          typeof bar === "number" ? "mt-3" : "mt-4"
-        }`}
-      >
-        {caption}
-      </p>
+      <p className="mt-3 text-xs leading-relaxed text-faint">{caption}</p>
     </div>
   );
 }

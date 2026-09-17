@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
 import { Panel } from "@/components/Panel";
 
 /**
@@ -13,10 +12,12 @@ import { Panel } from "@/components/Panel";
  * bar says so.
  */
 const CAPTIONS = [
-  "Analyzing water distribution",
-  "Processing spatial regions",
-  "Calculating water clearance",
-  "Ranking candidate zones",
+  "Detecting water",
+  "Separating candidate land",
+  "Measuring region clearance",
+  "Computing storage radius",
+  "Sampling probable drop zones",
+  "Running object context",
 ];
 
 export function AnalysisProgress({ previewUrl }: { previewUrl: string }) {
@@ -25,52 +26,42 @@ export function AnalysisProgress({ previewUrl }: { previewUrl: string }) {
   useEffect(() => {
     const timer = window.setInterval(() => {
       setIndex((current) => (current + 1) % CAPTIONS.length);
-    }, 1900);
+    }, 1600);
     return () => window.clearInterval(timer);
   }, []);
 
   return (
-    <Panel className="anim-fade-up overflow-hidden">
-      <div className="flex flex-col items-center px-5 py-10 sm:py-14">
-        {/* Preview with a single slow scan sweep. */}
-        <div className="viewer-canvas relative h-48 w-full max-w-md overflow-hidden rounded border border-line sm:h-56">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={previewUrl}
-            alt=""
-            aria-hidden="true"
-            className="size-full object-contain opacity-45"
-          />
-          <div className="pointer-events-none absolute inset-0 overflow-hidden">
-            <div className="anim-sweep h-[2px] w-full bg-gradient-to-r from-transparent via-water to-transparent opacity-70" />
-          </div>
-          <div className="pointer-events-none absolute inset-0 bg-ground/35" />
+    <Panel className="anim-fade-up overflow-hidden" aria-busy="true">
+      <div className="viewer-canvas relative overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={previewUrl}
+          alt=""
+          aria-hidden="true"
+          className="mx-auto block max-h-[52vh] w-full object-contain opacity-40"
+        />
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="anim-sweep h-px w-full bg-water/80" />
         </div>
+      </div>
 
-        <div className="mt-8 flex items-center gap-2.5">
-          <Loader2 className="size-4 animate-spin text-water" strokeWidth={2} />
-          <h3 className="font-mono text-[13px] uppercase tracking-[0.2em] text-ink">
-            Analysis in progress
-          </h3>
-        </div>
-
-        {/* Rotating caption. Fixed height so nothing shifts between swaps. */}
-        <div className="mt-4 flex h-5 items-center" aria-live="polite">
+      <div className="p-5 sm:p-6">
+        <div className="flex items-baseline justify-between gap-4">
+          <p className="text-lg text-ink">Analysis in progress</p>
           <span
             key={index}
-            className="anim-fade font-mono text-[11px] uppercase tracking-[0.18em] text-muted"
+            className="anim-fade eyebrow text-muted"
+            aria-live="polite"
           >
             {CAPTIONS[index]}
           </span>
         </div>
-
-        <div className="relative mt-6 h-[3px] w-full max-w-md overflow-hidden rounded-full bg-line">
-          <div className="anim-indeterminate absolute inset-y-0 left-0 w-1/3 rounded-full bg-water/80" />
+        <div className="relative mt-4 h-[2px] w-full overflow-hidden rounded-full bg-line">
+          <div className="anim-indeterminate absolute inset-y-0 left-0 w-1/3 rounded-full bg-water" />
         </div>
-
-        <p className="mt-5 max-w-sm text-center text-[11px] leading-relaxed text-faint">
-          Indicative activity display. The analysis service returns a single
-          completed result rather than live stage updates.
+        <p className="mt-3 text-xs text-faint">
+          Indicative activity only. The service returns one completed result,
+          not live stage updates.
         </p>
       </div>
     </Panel>

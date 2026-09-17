@@ -1,124 +1,116 @@
 # AASRA frontend
 
-Next.js + TypeScript + Tailwind CSS interface for the AASRA analysis backend.
-Icons: `lucide-react` (the only icon library used).
+Next.js 16 (App Router) + TypeScript + Tailwind CSS 4. Icons: `lucide-react`.
 
-Every number, classification and image shown in the UI is read from the live
-backend response. There is no mock data, no fallback sample and no hardcoded
-metric anywhere in this app.
-
-## Prerequisites
-
-The backend must be running (see `../backend/README.md`):
-
-```bash
-cd ../backend
-.venv\Scripts\activate        # Windows  (source .venv/bin/activate elsewhere)
-uvicorn app.main:app --reload --port 8000
-```
+Every number, classification and analysis image comes from the live backend
+response — no mock data and no hardcoded metrics. The only bundled images are
+public-domain photographs in `public/imagery/` (hero, a band image and two
+sample inputs; see `public/imagery/CREDITS.md`).
 
 ## Run
 
+The backend must be running on port 8000 (see `../backend/README.md`).
+
 ```bash
 npm install
-cp .env.example .env.local     # or copy on Windows
+cp .env.example .env.local     # NEXT_PUBLIC_API_URL=http://localhost:8000
 npm run dev                    # http://localhost:3000
 ```
 
-Production:
+Production: `npm run build && npm start`.
 
-```bash
-npm run build
-npm start
-```
+| Variable | Default | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | backend base URL |
 
-## Configuration
+`next.config.ts` sets `agentRules: false` so `next dev` does not write
+`AGENTS.md` / `CLAUDE.md` into the repository.
 
-| Variable              | Default                 | Purpose                       |
-| --------------------- | ----------------------- | ----------------------------- |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Base URL of the AASRA backend |
+## Page
 
-No API keys. No secrets.
+`app/page.tsx` is a single page with a stage machine:
+`idle → ready → analyzing → results | error`.
+
+- **Landing** (`components/Landing.tsx`): full-bleed hero photograph, the
+  nine-step method with a storage/drop-zone diagram, the analysis workspace,
+  and a scope statement over a second photograph.
+- **Workspace**: drag-and-drop or file picker, plus two sample images
+  (`UploadZone.tsx`), preview (`ImagePreview.tsx`), progress
+  (`AnalysisProgress.tsx`), error (`States.tsx`). Uploads are disabled while
+  `GET /health` fails (polled every 20 s).
+- **Results** (`ResultsDashboard.tsx`), in alternating dark / light chapters:
+  1. header and five metrics (water, non-water, candidate regions, probable
+     storage zones, probable drop zones);
+  2. stage viewer (`ImageWorkspace.tsx`) with tabs *Original, Water Analysis,
+     Candidate Areas, Drop Zones, Land Isolation, Final Result, AI Context*,
+     legends, a "Why these points" explanation under Drop Zones, and the
+     run's parameters (`ScanParameters.tsx`);
+  3. probable storage zones (primary) and the selected zone's probable drop
+     zones (secondary) (`StorageZones.tsx`), next to a sticky copy of the
+     Final Result;
+  4. AI object context (`AIStatus.tsx`);
+  5. limitations (`Disclaimer.tsx`).
+
+Refreshing the page returns to the landing page; results are not stored.
+
+### Highlight overlay
+
+Hovering or focusing a storage or drop-zone card rings it on the Final Result
+and Drop Zones images. The ring is an SVG whose `viewBox` is the processed
+image size and whose `preserveAspectRatio` is `xMidYMid meet` — the same
+letterboxing as the image's `object-contain` — and pixel `(x, y)` is drawn at
+`x + 0.5, y + 0.5`. The end-to-end suite checks that the ring's centre lands
+within 1 CSS pixel of the reported centre and that the screen pixel there is
+the backend's green centre marker.
 
 ## Backend contract
 
-Both calls live in [`lib/api.ts`](lib/api.ts) — nothing else in the app fetches.
+Both calls live in `lib/api.ts`. `types/api.ts` mirrors the payload built in
+`backend/app/pipeline.py`, including `storage_zones`, `storage_analysis` and
+`parameters.storage`. `images.*` are raw base64 PNGs; `toDataUrl()` in
+`lib/format.ts` adds the `data:` prefix, and tabs appear only for images that
+arrived non-empty. Backend error messages are shown as-is; network failures
+and malformed responses get a clean generic message.
 
-- `GET /health` — polled on load and every 20s. Drives the offline notice and
-  disables uploads on the start screen when the backend is unreachable, and
-  supplies the real upload size limit. It never claims the service is up
-  when the probe fails.
-- `POST /api/analyze` — `multipart/form-data`, form field **`image`** (fixed by
-  the backend signature `analyze(image: UploadFile = File(...))`).
+## Design
 
-Response types in [`types/api.ts`](types/api.ts) mirror the real payload built
-in `backend/app/pipeline.py`.
+Tokens are in `app/globals.css`; the system is described in
+[`docs/design.md`](../docs/design.md). Shared action classes (pills) are in
+`lib/ui.ts`, classification colours in `lib/classification.ts`.
 
-### Visualisation images
+Brand assets come from the official AASRA logo: `public/brand/aasra-mark.png`
+(header emblem) and the `app/` file conventions `favicon.ico`, `icon.png`,
+`apple-icon.png` and `opengraph-image.png`. See `docs/design.md` → Logo.
 
-`images.*` are **raw base64 PNG strings** with no `data:` prefix (verified: they
-begin with the PNG signature `iVBORw0KGgo`). `toDataUrl()` in
-[`lib/format.ts`](lib/format.ts) prefixes `data:image/png;base64,` and passes
-through anything that already is a data URL. Tabs are built only from keys that
-arrive non-empty, so a missing view is omitted rather than rendered broken.
+## Wording
 
-### Errors
+*Probable Storage Zone*, *Probable Drop Zone*, *Candidate Drop Point*,
+*High / Moderate / Low Potential*. Never "safe", "guaranteed", "rescue zone"
+or "landing zone". Two scores are always labelled apart: the **region score**
+(on storage zones) and the **drop-point score** (on drop zones). All
+distances are image pixels.
 
-The backend returns `{ success: false, error: { code, message } }` and never
-leaks tracebacks. `lib/api.ts` surfaces that message as-is and substitutes a
-clean message for network failures and malformed responses. No Python
-exception, stack trace or FastAPI internal ever reaches the screen.
+## Checks
 
-## Structure
-
-```
-frontend/
-  app/
-    layout.tsx            fonts, metadata, page shell
-    page.tsx              stage machine: idle -> ready -> analyzing -> results | error
-    globals.css           design tokens, motion
-  components/
-    Header.tsx            wordmark
-    UploadZone.tsx        drag-and-drop + browse, client-side pre-validation
-    ImagePreview.tsx      staged file, "READY FOR ANALYSIS", analyze / remove
-    AnalysisProgress.tsx  loading experience for the single analyze request
-    ResultsDashboard.tsx  composes the results view
-    MetricCard.tsx        headline metric tile
-    ImageWorkspace.tsx    tabbed viewer over the backend visualisations
-    ZoneCard.tsx          ranked potential zone + expandable score breakdown
-    ScoreBreakdown.tsx    score bar primitive
-    AIStatus.tsx          supplementary YOLO object-detection summary
-    ScanParameters.tsx    the parameters the backend actually used
-    PipelineStrip.tsx     compact description of the pipeline (upload screen)
-    Disclaimer.tsx        prototype disclaimer
-    States.tsx            error state + empty states
-    Panel.tsx             surface / heading primitives
-  lib/
-    api.ts                the only place that talks to the backend
-    format.ts             number, byte and base64 -> data URL helpers
-    classification.ts     backend classification string -> colour tone
-  types/
-    api.ts                TypeScript mirror of the real backend payloads
+```bash
+npx tsc --noEmit
+npm run lint
+npm run build
 ```
 
-## Wording rules
+End-to-end (`e2e/`, driven by `playwright-cli`; needs both servers running):
 
-The UI follows the project's terminology: *Potential Zone*, *Candidate Zone*,
-*HIGH / MODERATE / LOW POTENTIAL*. Never "safe", never "landing zone", never
-any claim that a detected person or vehicle is a flood victim, a stranded
-person, or a rescue asset. Classification strings are rendered verbatim from
-the backend. All distances and areas are pixels of the processed image —
-never metres.
+```bash
+cd e2e
+../../backend/.venv/Scripts/python make_fixtures.py   # Linux/macOS: .venv/bin/python
+playwright-cli open http://localhost:3000
+playwright-cli run-code --filename=aasra.e2e.js
+```
 
-The backend also computes *potentially isolated land regions* and returns
-them in the API (`isolated_regions`, `images.isolated_regions`), but this
-dashboard does not currently display that section — its focus is the ranked
-relief zones. The data remains available to any client that wants it.
-
-`analysis_mode.ai` is reported honestly from the backend's real, per-request
-result: `AIStatus.tsx` shows **Active** with the model name and per-class
-detection counts only when the backend actually ran YOLO successfully for
-that image, and **Unavailable** with the backend's own message otherwise. An
-"Active" status with zero detections ("No relevant objects detected.") is
-shown distinctly from "Unavailable" — the two are never conflated. Nothing
-in this panel is hardcoded.
+It covers the landing page, invalid and corrupt uploads, the sample analysis,
+every tab, the highlight alignment, storage-zone selection, refresh, a
+6000 × 4000 upload, an all-water image, small storage zones with and without
+drop zones, 390 px and 820 px layouts, an unreachable backend, an
+older-backend response (`INCOMPATIBLE_BACKEND`), a failed
+analysis request, and console errors. Screenshots are written to
+`e2e/screenshots/` (gitignored).

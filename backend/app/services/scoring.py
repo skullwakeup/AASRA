@@ -10,7 +10,7 @@ fully deterministic sub-scores. No random numbers, no hidden constants.
 
     water_clearance_score = 100 * min(1, water_clearance_px / CLEARANCE_SCORE_SATURATION_PX)
                             water_clearance_px is the pixel distance from the
-                            candidate drop point to the nearest detected water
+                            zone's max-clearance point to the nearest detected water
                             pixel. PIXELS, NOT METRES.
 
     openness_score        = 100 * openness   (see region_analysis._compute_openness)

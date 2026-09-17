@@ -31,3 +31,18 @@ uploads/
 # Frontend (when it exists)
 node_modules/
 frontend/dist/
+
+# QA artefacts (playwright-cli)
+.qa/
+.playwright-cli/
+frontend/e2e/fixtures/
+frontend/e2e/screenshots/
+frontend/e2e/run.log
+
+# Local secrets (the frontend's own .gitignore covers frontend/)
+.env
+.env.*
+!.env.example
+
+# Local tooling output (contains machine paths and caches)
+graphify-out/

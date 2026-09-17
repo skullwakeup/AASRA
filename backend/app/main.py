@@ -140,7 +140,7 @@ def root() -> Dict[str, Any]:
 
 @app.post("/api/analyze")
 async def analyze(image: UploadFile = File(...)):
-    """Analyse an aerial flood image and return candidate relief zones."""
+    """Analyse an aerial flood image: water, candidate regions, probable storage and drop zones."""
 
     # ---- Validation: filename / extension ---------------------------------
     filename = image.filename or ""
