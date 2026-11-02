@@ -1,0 +1,217 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   AASRA — design tokens (see docs/design.md)
+
+   Two canvases alternate down the page: a near-black canvas for imagery and
+   analysis, and an off-white canvas for explanation and results. Colour is
+   reserved for meaning:
+     water   — detected water, and nothing else
+     signal  — high-potential results
+     sensor  — Probable Smart Sensor Drop Zones (purple)
+     supply  — Probable Supply Drop Zone (green shoreline band)
+     caution — moderate results
+     warning — errors and not-viable results only
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* dark canvas */
+  --canvas: #050607;
+  --surface: #0e1012;
+  --surface-raised: #16181b;
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.2);
+  --text: #f2f1ed;
+  --text-muted: rgba(242, 241, 237, 0.68);
+  --text-faint: rgba(242, 241, 237, 0.46);
+
+  /* light canvas */
+  --paper: #f3f2ee;
+  --paper-card: #ffffff;
+  --paper-line: #deddd6;
+  --paper-text: #0b0c0d;
+  --paper-muted: rgba(11, 12, 13, 0.64);
+  --paper-faint: rgba(11, 12, 13, 0.46);
+
+  /* meaning */
+  --water: #3a8ee6;
+  --signal: #34d378;
+  --signal-ink: #0f7a3f; /* signal green legible on the light canvas */
+  --caution: #e0b24f;
+  --caution-ink: #8a6210;
+  --warning: #ef5a5f;
+  --warning-ink: #b3262b;
+  /* drop zones — exact colours the backend draws with */
+  --sensor: #a855f7;
+  --sensor-ink: #7e22ce;
+  --supply: #22c55e;
+  --supply-ink: #15803d;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--surface-raised);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+
+  --color-paper: var(--paper);
+  --color-paper-card: var(--paper-card);
+  --color-paper-line: var(--paper-line);
+  --color-paper-ink: var(--paper-text);
+  --color-paper-muted: var(--paper-muted);
+  --color-paper-faint: var(--paper-faint);
+
+  --color-water: var(--water);
+  --color-signal: var(--signal);
+  --color-signal-ink: var(--signal-ink);
+  --color-caution: var(--caution);
+  --color-caution-ink: var(--caution-ink);
+  --color-warning: var(--warning);
+  --color-warning-ink: var(--warning-ink);
+  --color-sensor: var(--sensor);
+  --color-sensor-ink: var(--sensor-ink);
+  --color-supply: var(--supply);
+  --color-supply-ink: var(--supply-ink);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  background: var(--canvas);
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--text);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Display type: light weight, slightly tight — the editorial voice. */
+.display {
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+}
+
+/* Small uppercase label above headings and values. */
+.eyebrow {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Shared chapter rhythm: 48 / 64 / 96 px. */
+.chapter {
+  padding-block: 48px;
+}
+@media (min-width: 640px) {
+  .chapter {
+    padding-block: 64px;
+  }
+}
+@media (min-width: 1024px) {
+  .chapter {
+    padding-block: 96px;
+  }
+}
+
+/* Neutral backdrop behind visualisation images so letterboxing reads as
+   intentional empty canvas. */
+.viewer-canvas {
+  background-color: #020303;
+}
+
+/* ---------------------------------------------------------------- motion --
+   Subtle only: short fades, plus one sweep while an analysis is running.
+   Everything here is disabled under prefers-reduced-motion.            */
+
+@keyframes aasra-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes aasra-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes aasra-sweep {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(1000%);
+  }
+}
+
+@keyframes aasra-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.anim-fade-up {
+  animation: aasra-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.anim-fade {
+  animation: aasra-fade 0.35s ease both;
+}
+
+.anim-sweep {
+  animation: aasra-sweep 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.anim-indeterminate {
+  animation: aasra-indeterminate 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .anim-fade-up,
+  .anim-fade,
+  .anim-sweep,
+  .anim-indeterminate {
+    animation: none !important;
+  }
+}
+
+/* Focus ring: visible on both canvases. */
+:where(button, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--water);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(58, 142, 230, 0.3);
+}
+
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
