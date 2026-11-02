@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test / run artefacts
+backend/tests/output/
+*.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local data (do not commit imagery)
+data/
+samples/
+uploads/
+*.tif
+*.tiff
+
+# Frontend (when it exists)
+node_modules/
+frontend/dist/
+
+# QA artefacts (playwright-cli)
+.qa/
+.playwright-cli/
+frontend/e2e/fixtures/
+frontend/e2e/screenshots/
+frontend/e2e/run.log
+
+# Local secrets (the frontend's own .gitignore covers frontend/)
+.env
+.env.*
+!.env.example
+
+# Local tooling output (contains machine paths and caches)
+graphify-out/

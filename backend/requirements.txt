@@ -1,0 +1,39 @@
+# AASRA backend
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+numpy==2.1.3
+pillow==11.0.0
+
+# opencv-python-headless (not opencv-python): identical `cv2` API, no GUI/X11
+# dependency (libGL.so.1 etc.), which minimal Linux deployment images (e.g.
+# Render) frequently lack. This codebase calls no GUI function
+# (imshow/waitKey/namedWindow/VideoCapture), so headless is a safe drop-in.
+opencv-python-headless==4.10.0.84
+
+# --------------------------------------------------------------------------
+# Optional AI supplement (services/ai_detection.py)
+# --------------------------------------------------------------------------
+# ONNX Runtime replaces the previous torch + torchvision + ultralytics stack.
+#
+# Why: that stack could not run on a 512 MB instance. Importing torch alone
+# costs ~250-300 MB RSS before a single image is processed, and the CPU wheel
+# is ~180 MB installed (the default PyPI Linux wheel bundles CUDA and is
+# ~730 MB). onnxruntime with yolo11n is roughly a fifth of that, which is what
+# makes AI context viable on the free deployment tier at all.
+#
+# Consequences of the swap, all handled in ai_detection.py:
+#   * the model ships as a pre-exported app/services/weights/yolo11n.onnx
+#     (~10 MB, committed) instead of being downloaded at runtime — a cold
+#     start needs no internet and cannot half-download a cache
+#   * ultralytics' pre/post-processing is gone, so letterboxing, output
+#     decoding and per-class NMS are implemented explicitly there
+#   * the opencv-python conflict that forced the old two-step `--no-deps`
+#     install disappears: onnxruntime has no opencv dependency, so a single
+#     `pip install -r requirements.txt` is now the whole build
+#
+# Exact pin, like every other dependency here, so a new onnxruntime release
+# cannot change or break a deploy. 1.29.0 has cp313 manylinux wheels and is
+# the version the test suite and sample images were verified with on
+# Python 3.13.
+onnxruntime==1.29.0
